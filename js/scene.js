@@ -1,10 +1,14 @@
 // Animierte Wettersequenz: spielt die Vorhersage als kurzen «Film» auf einem Canvas ab.
-import { sunElevation, visualState } from './ensemble.js';
+import { sunElevation, visualState, isWet } from './ensemble.js';
 
-const DURATION = 28000; // ms für die ganze Sequenz
+const MS_PER_HOUR = 800; // Abspieltempo: so lange dauert eine Vorhersagestunde
 const INTRO = 0.06; // Anteil Titelbild am Anfang
 const OUTRO = 0.92; // ab hier Zusammenfassung
-const KIND_TEXT = { clear: 'Klar', partly: 'Teils bewölkt', cloudy: 'Bewölkt', rain: 'Regen', snow: 'Schnee' };
+const KIND_TEXT = {
+  clear: 'Klar', partly: 'Teils bewölkt', cloudy: 'Bewölkt', fog: 'Nebel',
+  rain: 'Regen', snow: 'Schnee', thunder: 'Gewitter',
+};
+const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 
 const lerp = (a, b, f) => a + (b - a) * f;
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -81,6 +85,7 @@ export class Scene {
     this.data = null;
     this.last = 0;
     this.clock = 0;
+    this.drift = 0;
     this.tick = this.tick.bind(this);
     this.ridges = [
       makeRidge(500, [[1.3, 1], [3.1, 0.55], [7.3, 0.28], [15, 0.12]], 0.16), // ferne Alpenkette
@@ -138,7 +143,10 @@ export class Scene {
     const dt = Math.max(0, Math.min(now - this.last, 100)); // rAF-Zeit kann vor dem Startzeitpunkt liegen
     this.last = now;
     this.clock += dt;
-    this.progress += dt / DURATION;
+    // Wolken und Nebel ziehen mit dem Wind: eigener Zähler, damit nichts springt
+    const windNow = this.stateAt(clamp01((this.progress - INTRO) / (OUTRO - INTRO))).wind;
+    this.drift += dt * (0.5 + windNow / 18);
+    this.progress += dt / (this.data.hours.length * MS_PER_HOUR + 6000);
     if (this.progress >= 1) {
       this.progress = 1;
       this.playing = false;
@@ -170,6 +178,12 @@ export class Scene {
       cover: lerp(va.cover, vb.cover, ease),
       rain: lerp(va.rain, vb.rain, ease),
       snow: lerp(va.snow, vb.snow, ease),
+      fog: lerp(va.fog, vb.fog, ease),
+      thunder: lerp(va.thunder, vb.thunder, ease),
+      wind: lerp(a.wind ?? 0, b.wind ?? 0, k),
+      gust: lerp(a.gust ?? a.wind ?? 0, b.gust ?? b.wind ?? 0, k),
+      hasWind: near.wind !== null && near.wind !== undefined,
+      hasGust: near.gust !== null && near.gust !== undefined,
       kind: near.kind,
       confLabel: near.confLabel,
       n: near.n,
@@ -202,10 +216,11 @@ export class Scene {
     const dusk = clamp01(1 - Math.abs(elev) / 10); // Sonne nahe am Horizont
     const wetAmt = clamp01((s.rain + s.snow) / 2);
     const falling = clamp01((s.rain + s.snow) / 0.3); // 1 = es regnet oder schneit
-    const gloom = clamp01(cover ** 1.5 * 1.2 + falling * 0.2); // wie trüb der Himmel ist
+    const gloom = clamp01(cover ** 1.5 * 1.2 + falling * 0.2 + s.thunder * 0.3); // wie trüb der Himmel ist
+    const blow = clamp01(Math.max(s.wind, s.gust * 0.6) / 60); // 0 = windstill, 1 = Sturm
     // Wie stark Sonne, Mond und Sterne durchkommen: ab dichter Decke gar nicht mehr
     const c = clamp01((cover - 0.5) / 0.38);
-    const clearSky = (1 - c * c * (3 - 2 * c)) * (1 - falling);
+    const clearSky = (1 - c * c * (3 - 2 * c)) * (1 - falling) * (1 - s.fog);
     const clock = this.clock;
 
     // ---------- Himmel ----------
@@ -325,7 +340,7 @@ export class Scene {
       for (let i = 0; i < count; i++) {
         const cw = u * 62 * lerp(scaleLo, scaleHi, R[seed + i]);
         const span = w + cw * 1.5;
-        const x = ((R[seed + i + 20] * span + clock * speed * u * (0.7 + R[seed + i + 40] * 0.6)) % span) - cw;
+        const x = ((R[seed + i + 20] * span + this.drift * speed * u * (0.7 + R[seed + i + 40] * 0.6)) % span) - cw;
         const y = horizon * lerp(yLo, yHi, R[seed + i + 60]) - cw * 0.3;
         ctx.drawImage(sprites[(seed + i) % sprites.length], x, y, cw, cw / 2);
       }
@@ -342,6 +357,38 @@ export class Scene {
       ctx.fillRect(0, 0, w, horizon + u * 4);
     }
     cloudLayer(Math.round(cover * 10 + falling * 3), 350, 1.1, 1.9, 0.08, 0.46, 0.0045, 1); // nah, gross, schneller
+
+    // Gewitter: Blitz im Himmel (die Berge verdecken sein unteres Ende)
+    let flash = 0;
+    if (s.thunder > 0.5) {
+      const period = 2400;
+      const idx = Math.floor(clock / period);
+      const since = clock - idx * period - R[(idx * 13) % 600] * 1300;
+      if (since >= 0 && since < 460) {
+        flash = since < 80 || (since > 150 && since < 240) ? 1 : 0.35 * (1 - since / 460);
+        if (since < 240) {
+          let x = w * (0.15 + R[(idx * 29) % 600] * 0.7);
+          ctx.strokeStyle = 'rgba(245,248,255,0.95)';
+          ctx.shadowColor = 'rgba(170,200,255,0.9)';
+          ctx.shadowBlur = u * 3;
+          ctx.lineWidth = Math.max(1.5, u * 0.55);
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(x, horizon * 0.2);
+          for (let j = 1; j <= 9; j++) {
+            x += (R[(idx * 7 + j * 11) % 600] - 0.5) * u * 9;
+            ctx.lineTo(x, horizon * (0.2 + j * 0.085));
+            if (j === 4) {
+              // Seitenast
+              ctx.lineTo(x + u * 7, horizon * (0.2 + (j + 1.6) * 0.085));
+              ctx.moveTo(x, horizon * (0.2 + j * 0.085));
+            }
+          }
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+      }
+    }
 
     // ---------- Landschaft ----------
     const snowGround = clamp01(s.snow / 0.3) * 0.85;
@@ -465,7 +512,7 @@ export class Scene {
             const x = R[k] * w * 1.15;
             const y = ((R[(k + 211) % 600] + t * speed * (0.9 + R[(k + 97) % 600] * 0.2)) % 1) * (h + u * 8) - u * 4;
             ctx.moveTo(x, y);
-            ctx.lineTo(x - u * len * 0.22, y + u * len);
+            ctx.lineTo(x - u * len * (0.12 + blow * 0.75), y + u * len);
           }
           ctx.stroke();
         },
@@ -492,12 +539,38 @@ export class Scene {
         for (let i = 0; i < n; i++) {
           const k = (i * 7 + layer * 131) % 600;
           const y = ((R[(k + 211) % 600] + t * speed * (0.8 + R[(k + 97) % 600] * 0.4)) % 1) * h;
-          const x = R[k] * w + Math.sin(t * 0.8 + k) * u * (1.5 + layer);
+          const side = (((R[k] - t * blow * 0.12 * (1 + layer * 0.4)) % 1) + 1) % 1; // Wind treibt den Schnee seitwärts
+          const x = side * w * 1.1 - w * 0.05 + Math.sin(t * 0.8 + k) * u * (1.5 + layer);
           ctx.beginPath();
           ctx.arc(x, y, u * size * (0.7 + R[(k + 50) % 600] * 0.6), 0, Math.PI * 2);
           ctx.fill();
         }
       });
+    }
+
+    // ---------- Nebel: verschluckt Berge und Wald, zieht in Schwaden über die Wiese ----------
+    if (s.fog > 0.02) {
+      const fogColor = mix([46, 50, 60], [208, 212, 218], day);
+      const veil = ctx.createLinearGradient(0, 0, 0, h);
+      veil.addColorStop(0, rgb(fogColor, 0.45 * s.fog));
+      veil.addColorStop(horizon / h, rgb(fogColor, 0.9 * s.fog));
+      veil.addColorStop(1, rgb(fogColor, 0.55 * s.fog));
+      ctx.fillStyle = veil;
+      ctx.fillRect(0, 0, w, h);
+      ctx.globalAlpha = 0.5 * s.fog;
+      for (let i = 0; i < 6; i++) {
+        const bw = u * (120 + R[i + 560] * 80);
+        const span = w + bw;
+        const x = ((R[i + 570] * span + this.drift * 0.004 * u * (0.6 + R[i + 580])) % span) - bw;
+        ctx.drawImage(sprites[i % sprites.length], x, horizon + u * (-12 + i * 5.5), bw, bw * 0.22);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Wetterleuchten: der Blitz erhellt kurz die ganze Szene
+    if (flash > 0) {
+      ctx.fillStyle = `rgba(214,226,255,${0.3 * flash})`;
+      ctx.fillRect(0, 0, w, h);
     }
 
     // ---------- Bildwirkung: Randabdunklung und Lesehilfe für den Text ----------
@@ -536,7 +609,11 @@ export class Scene {
     ctx.fillText(KIND_TEXT[s.kind], pad, pad + u * 42);
     ctx.font = `500 ${u * 4.2}px system-ui, sans-serif`;
     ctx.fillText(`Niederschlag ${s.precip.toFixed(1)} mm · Risiko ${Math.round(s.prob * 100)} %`, pad, pad + u * 49, w - pad * 2);
-    ctx.fillText(`Konfidenz ${s.confLabel} · ${s.n} Quellen`, pad, pad + u * 55, w - pad * 2);
+    const windText = !s.hasWind
+      ? 'Wind: keine Angabe'
+      : `Wind ${Math.round(s.wind)} km/h` + (s.hasGust ? ` · Böen ${Math.round(s.gust)} km/h` : '');
+    ctx.fillText(windText, pad, pad + u * 55, w - pad * 2);
+    ctx.fillText(`Konfidenz ${s.confLabel} · ${s.n} Quellen`, pad, pad + u * 61, w - pad * 2);
     ctx.shadowBlur = 0;
 
     this.drawTimeline(w, h, u, pad, main);
@@ -549,7 +626,12 @@ export class Scene {
     const { place, summary, hours, sourceCount } = this.data;
     const p = this.progress;
     const off = this.data.utcOffset ?? -new Date(hours[0].ms).getTimezoneOffset() * 60;
-    const clock = (ms) => `${String(new Date(ms + off * 1000).getUTCHours()).padStart(2, '0')}:00`;
+    // Wochentag und Uhrzeit, z.B. «Mi 15:00» (der Zeitraum reicht über mehrere Tage)
+    const clock = (ms) => {
+      const d = new Date(ms + off * 1000);
+      return `${WEEKDAYS[d.getUTCDay()]} ${String(d.getUTCHours()).padStart(2, '0')}:00`;
+    };
+    const span = (list) => `${clock(list[0])} bis ${clock(list[list.length - 1] + 3600e3)}`;
 
     const intro = clamp01(1 - (p - INTRO * 0.6) / (INTRO * 0.4));
     if (p < INTRO && intro > 0) {
@@ -575,9 +657,12 @@ export class Scene {
       const lines = [
         ['Temperatur', `${Math.round(summary.lo)}° bis ${Math.round(summary.hi)}°`],
         ['Niederschlag', summary.wet ? `${summary.total.toFixed(1)} mm in ${summary.wet} Std.` : 'keiner erwartet'],
-        ['Nass', summary.wet ? `${clock(summary.wetFrom)} bis ${clock(summary.wetTo + 3600e3)}` : '–'],
-        ['Konfidenz', summary.confText],
+        ['Nass', summary.wet ? span([summary.wetFrom, summary.wetTo]) : '–'],
+        ['Wind', summary.maxGust === null ? 'keine Angabe' : `Böen bis ${Math.round(summary.maxGust)} km/h`],
       ];
+      if (summary.thunder.length) lines.push(['Gewitter', `möglich ${span(summary.thunder)}`]);
+      if (summary.fog.length) lines.push(['Nebel', span(summary.fog)]);
+      lines.push(['Konfidenz', summary.confText]);
       const bw = Math.min(w - pad * 2, u * 88);
       const bh = u * (16 + lines.length * 8.5);
       const bx = (w - bw) / 2;
@@ -638,7 +723,7 @@ export class Scene {
     // Niederschlag
     const barW = Math.max(2, step * 0.55);
     hrs.forEach((x, i) => {
-      if (x.kind !== 'rain' && x.kind !== 'snow') return;
+      if (!isWet(x.kind)) return;
       const bh = clamp01(x.precip / 4) * (y1 - y0) * 0.9 + u;
       ctx.fillStyle = `rgba(110,180,255,${0.35 + 0.5 * clamp01(x.prob)})`;
       ctx.fillRect(xs(i) - barW / 2, y1 - bh, barW, bh);
@@ -668,12 +753,23 @@ export class Scene {
 
     // Uhrzeiten
     const off = this.data.utcOffset ?? -new Date(hrs[0].ms).getTimezoneOffset() * 60;
-    const every = w / u > 110 ? 2 : 3;
+    const wide = w / u > 110;
+    const every = hrs.length > 30 ? (wide ? 3 : 6) : wide ? 2 : 3;
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.textAlign = 'center';
     ctx.font = `500 ${u * 2.9}px system-ui, sans-serif`;
     hrs.forEach((x, i) => {
-      const hour = new Date(x.ms + off * 1000).getUTCHours();
+      const local = new Date(x.ms + off * 1000);
+      const hour = local.getUTCHours();
+      if (hour === 0 && i > 0) {
+        // Tageswechsel: Trennlinie mit Wochentag
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.fillRect(xs(i) - u * 0.12, y0 - u, u * 0.24, y1 - y0 + u * 2);
+        ctx.textAlign = 'left';
+        ctx.fillText(WEEKDAYS[local.getUTCDay()], xs(i) + u * 1, y0 + u * 2.2);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      }
       if (hour % every) return;
       ctx.fillText(String(hour).padStart(2, '0'), xs(i), y1 + u * 5);
       ctx.fillRect(xs(i) - u * 0.1, y1 + u * 0.6, u * 0.2, u * 1.2);
@@ -697,7 +793,8 @@ export class Scene {
 
 // Kennzahlen für die Zusammenfassung am Schluss
 function summarize(hours) {
-  const wetHours = hours.filter((x) => x.kind === 'rain' || x.kind === 'snow');
+  const wetHours = hours.filter((x) => isWet(x.kind));
+  const gusts = hours.map((x) => x.gust ?? x.wind).filter((v) => v !== null && v !== undefined);
   const count = (label) => hours.filter((x) => x.confLabel === label).length;
   const [hoch, mittel, tief] = [count('hoch'), count('mittel'), count('tief')];
   const top = Math.max(hoch, mittel, tief);
@@ -709,6 +806,9 @@ function summarize(hours) {
     wet: wetHours.length,
     wetFrom: wetHours[0]?.ms,
     wetTo: wetHours[wetHours.length - 1]?.ms,
+    maxGust: gusts.length ? Math.max(...gusts) : null,
+    thunder: hours.filter((x) => x.kind === 'thunder').map((x) => x.ms),
+    fog: hours.filter((x) => x.kind === 'fog').map((x) => x.ms),
     confText: `meist ${main} (${top}/${hours.length} Std.)`,
   };
 }

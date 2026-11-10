@@ -1,7 +1,7 @@
 {
   "name": "Wetterkonsens",
   "short_name": "Wetter",
-  "description": "Wahrscheinlichstes Wetter der nächsten 24 Stunden aus mehreren freien Wetterquellen.",
+  "description": "Wahrscheinlichstes Wetter der nächsten 48 Stunden aus mehreren freien Wetterquellen.",
   "lang": "de-CH",
   "start_url": "./",
   "scope": "./",

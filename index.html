@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Wetterkonsens</title>
-  <meta name="description" content="Wahrscheinlichstes Wetter der nächsten 24 Stunden aus mehreren freien Wetterquellen.">
+  <meta name="description" content="Wahrscheinlichstes Wetter der nächsten 48 Stunden aus mehreren freien Wetterquellen.">
   <meta name="theme-color" content="#101a2e">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
@@ -36,10 +36,11 @@
     </div>
 
     <h3>Stunde für Stunde</h3>
+    <p class="meta">mm: Niederschlag pro Stunde. Wind und Böen in km/h.</p>
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>Zeit</th><th>Wetter</th><th class="num">Temp.</th><th class="num">Spanne</th><th class="num">Menge</th><th class="num">Risiko</th><th>Konfidenz</th></tr>
+          <tr><th>Zeit</th><th>Wetter</th><th class="num">Temp.</th><th class="num wide-only">Spanne</th><th class="num">mm</th><th class="num">Risiko</th><th class="num">Wind/Böen</th><th>Konf.</th></tr>
         </thead>
         <tbody id="hours"></tbody>
       </table>
@@ -49,6 +50,7 @@
       <summary>Quellen und Methode</summary>
       <ul id="sources" class="sources"></ul>
       <p>Temperatur, Niederschlagsmenge und Bewölkung sind der gewichtete Median aller Quellen. Das Niederschlagsrisiko ist der gewichtete Anteil der Quellen mit Niederschlag, gemittelt mit deren eigenen Wahrscheinlichkeiten. Die Konfidenz ist eine Faustregel: Sie sinkt, je weiter die Quellen auseinanderliegen.</p>
+      <p>Wind und Böen sind der gewichtete Median der Quellen, die dazu Angaben liefern. Gewitter wird angezeigt, sobald Quellen mit zusammen mindestens 30 % des Gewichts eines melden, weil Gewitter örtlich und schwer vorherzusagen sind. Nebel wird angezeigt, wenn die Mehrheit ihn meldet.</p>
       <p>Ausgangsgewichte: nachbearbeitete Punktvorhersage (MOSMIX) und ECMWF höher, GFS tiefer. MET Norway liefert ausserhalb Nordeuropas ECMWF-Daten und zählt deshalb nur als Teil der ECMWF-Stimme. Diese Werte sind eine Einschätzung und werden nach und nach durch die eigene Auswertung ersetzt.</p>
 
       <h3>Trefferquote der Quellen</h3>

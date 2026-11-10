@@ -2,7 +2,7 @@
 
 ## Vorgaben (Stand 10.11.2026)
 - Geräte: Android-Handy und iPad → Progressive Web App, gehostet auf GitHub Pages
-- Vorhersage: stündlich, 24 Stunden, Temperatur und Niederschlag
+- Vorhersage: stündlich, 48 Stunden (seit 10.11.2026, vorher 24); Temperatur, Niederschlag, Wind und Böen, Gewitter, Nebel
 - Ort: aktueller Standort oder Ortssuche, europaweit
 - Darstellung: animierte Sequenz in der App (keine Videodatei)
 - Sprache Deutsch, eigener Look, nur private Nutzung
@@ -12,6 +12,13 @@
 - Pro Stunde: gewichteter Median von Temperatur, Niederschlagsmenge und Bewölkung über alle Quellen
 - Niederschlagsrisiko: Anteil der Quellen mit ≥ 0.1 mm, gemittelt mit deren eigenen Wahrscheinlichkeiten
 - Konfidenz (hoch/mittel/tief): Faustregel aus Temperaturspanne und Einigkeit beim Niederschlag; bei weniger als 3 Quellen immer «tief». Nicht kalibriert.
+
+## Wind, Gewitter, Nebel (Stand 10.11.2026)
+- Wind und Böen: gewichteter Median der Quellen mit Angabe, in km/h. MET Norway liefert keine Böen.
+- Gewitter: wird angezeigt, sobald Quellen mit zusammen mindestens 30 % des Gewichts eines melden. Die Schwelle ist bewusst tief, weil Gewitter örtlich und schwer vorherzusagen sind; sie ist eine Setzung, nicht gemessen.
+- Nebel: wird angezeigt, wenn die Mehrheit (nach Gewicht) ihn meldet und es nicht regnet oder schneit.
+- Quelle der Angaben: Wettercode (Open-Meteo), Wettersymbol (MET Norway), Wetterzustand (Bright Sky). Feldnamen aus dem Gedächtnis, nicht gegen die Dokumentation geprüft.
+- Wind, Gewitter und Nebel fliessen nicht in die Auswertung der Trefferquote ein. Diese bewertet weiterhin nur die ersten 24 Stunden.
 
 ## Gewichtung der Quellen (Stand 10.11.2026)
 Gewichteter Median statt einfachem Median. Die Gewichte sind eine begründete Einschätzung, keine Messung.
@@ -45,7 +52,8 @@ Grenzen:
 3. [x] GitHub Pages aktivieren, App auf Handy und iPad installieren
 4. [x] Gewichtung der Quellen, detailliertere Animation (Titelbild, Zusammenfassung, Landschaft, Zeitleiste)
 5. [x] Eigene Auswertung der Trefferquote mit lernenden Gewichten
-6. [ ] Weiterer Feinschliff nach Rückmeldung (z.B. Favoriten)
+6. [x] Wind und Böen, Gewitter, Nebel, 48 Stunden
+7. [ ] Weiterer Feinschliff nach Rückmeldung (z.B. Favoriten)
 
 ## Offene Punkte
 - Die echten Schnittstellen konnten in der Entwicklungsumgebung nicht aufgerufen werden (Netzwerk gesperrt). Getestet ist nur mit nachgebildeten Antworten. Adressen, Parameter und Modellnamen stammen aus dem Gedächtnis und sind nicht gegen die Dokumentation geprüft.

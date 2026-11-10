@@ -4,6 +4,12 @@
 
 const H = 3600e3;
 const WET_MM = 0.1; // ab dieser Menge gilt eine Stunde als «nass»
+// Gewitter sind örtlich und schwer vorherzusagen: schon wenn Quellen mit zusammen 30 %
+// des Gewichts eines melden, wird es angezeigt. Nebel braucht die Mehrheit.
+const THUNDER_SHARE = 0.3;
+const FOG_SHARE = 0.5;
+
+export const isWet = (kind) => kind === 'rain' || kind === 'snow' || kind === 'thunder';
 
 export function median(values) {
   if (!values.length) return null;
@@ -54,8 +60,22 @@ export function combineHour(entries) {
   const prob = ppMean !== null ? (wetShare + ppMean / 100) / 2 : wetShare;
   const cloud = cc.length ? weightedMedian(cc) : null;
 
+  const ws = pick('ws');
+  const wg = pick('wg');
+  const wind = ws.length ? weightedMedian(ws) : null;
+  const gust = wg.length ? Math.max(weightedMedian(wg), wind ?? 0) : null;
+  // gewichteter Anteil der Quellen, die Gewitter bzw. Nebel melden
+  const share = (key) => {
+    const flags = pick(key);
+    return flags.length ? wsum(flags.filter(([v]) => v)) / wsum(flags) : 0;
+  };
+  const thunder = share('th');
+  const fog = share('fg');
+
   let kind;
-  if (precip >= WET_MM && wetShare >= 0.5) kind = temp <= 0.5 ? 'snow' : 'rain';
+  if (thunder >= THUNDER_SHARE) kind = 'thunder';
+  else if (precip >= WET_MM && wetShare >= 0.5) kind = temp <= 0.5 ? 'snow' : 'rain';
+  else if (fog >= FOG_SHARE) kind = 'fog';
   else if (cloud === null) kind = 'partly';
   else if (cloud >= 70) kind = 'cloudy';
   else if (cloud >= 30) kind = 'partly';
@@ -66,7 +86,7 @@ export function combineHour(entries) {
   if (t.length < 3) conf = Math.min(conf, 0.35); // zu wenige Quellen für ein Urteil
   const confLabel = conf >= 0.7 ? 'hoch' : conf >= 0.4 ? 'mittel' : 'tief';
 
-  return { n: t.length, temp, tMin, tMax, precip, prob, cloud, kind, conf, confLabel };
+  return { n: t.length, temp, tMin, tMax, precip, prob, cloud, wind, gust, thunder, fog, kind, conf, confLabel };
 }
 
 export function buildForecast(results, startMs, count = 24) {
@@ -85,23 +105,29 @@ export function buildForecast(results, startMs, count = 24) {
 }
 
 // Was die Animation für eine Stunde zeigen soll. Das Bild folgt der Wetterlage (kind),
-// damit Text und Bild immer zusammenpassen: Regen und Schnee nur unter dichter
-// Wolkendecke, «Bewölkt» ohne Sonne, «Klar» ohne nennenswerte Wolken.
-//   cover = sichtbare Bewölkung 0..1, rain/snow = sichtbare Stärke in mm pro Stunde
+// damit Text und Bild immer zusammenpassen: Regen, Schnee und Gewitter nur unter
+// dichter Wolkendecke, «Bewölkt» ohne Sonne, «Klar» ohne nennenswerte Wolken.
+//   cover = sichtbare Bewölkung 0..1, rain/snow = sichtbare Stärke in mm pro Stunde,
+//   fog/thunder = 0 oder 1
 export function visualState(hour) {
   const c = Math.max(0, Math.min(1, (hour.cloud ?? 50) / 100));
   const strength = Math.max(hour.precip ?? 0, 0.3); // auch leichter Niederschlag bleibt sichtbar
+  const dry = { rain: 0, snow: 0, fog: 0, thunder: 0 };
   switch (hour.kind) {
+    case 'thunder': // Gewitter immer mit kräftigem Regen und Blitzen
+      return { ...dry, cover: 1, rain: Math.max(strength, 1.5), thunder: 1 };
     case 'rain':
-      return { cover: Math.max(c, 0.96), rain: strength, snow: 0 };
+      return { ...dry, cover: Math.max(c, 0.96), rain: strength };
     case 'snow':
-      return { cover: Math.max(c, 0.96), rain: 0, snow: strength };
+      return { ...dry, cover: Math.max(c, 0.96), snow: strength };
+    case 'fog':
+      return { ...dry, cover: Math.max(c, 0.9), fog: 1 };
     case 'cloudy':
-      return { cover: Math.max(0.84, c), rain: 0, snow: 0 };
+      return { ...dry, cover: Math.max(0.84, c) };
     case 'partly':
-      return { cover: Math.max(0.3, Math.min(0.6, c)), rain: 0, snow: 0 };
+      return { ...dry, cover: Math.max(0.3, Math.min(0.6, c)) };
     default:
-      return { cover: Math.min(c, 0.1), rain: 0, snow: 0 };
+      return { ...dry, cover: Math.min(c, 0.1) };
   }
 }
 

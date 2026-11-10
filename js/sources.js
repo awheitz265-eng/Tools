@@ -1,6 +1,8 @@
 // Datenquellen. Jede Quelle liefert stündliche Werte als Map: UTC-Millisekunden -> { t, p, pp, cc }
 //   t  = Temperatur (°C), p = Niederschlag der Stunde (mm),
-//   pp = Niederschlagswahrscheinlichkeit (%), cc = Bewölkung (%)
+//   pp = Niederschlagswahrscheinlichkeit (%), cc = Bewölkung (%),
+//   ws = Wind (km/h), wg = Böen (km/h), th = Gewitter (ja/nein), fg = Nebel (ja/nein)
+// Was eine Quelle nicht liefert, ist null.
 // Fällt eine Quelle aus, läuft die App mit den übrigen weiter.
 
 const H = 3600e3;
@@ -28,8 +30,8 @@ function openMeteo(model) {
     const url =
       'https://api.open-meteo.com/v1/forecast' +
       `?latitude=${lat}&longitude=${lon}` +
-      '&hourly=temperature_2m,precipitation,precipitation_probability,cloud_cover' +
-      `&models=${model}&timeformat=unixtime&timezone=auto&forecast_days=3`;
+      '&hourly=temperature_2m,precipitation,precipitation_probability,cloud_cover,wind_speed_10m,wind_gusts_10m,weather_code' +
+      `&models=${model}&timeformat=unixtime&timezone=auto&forecast_days=4`;
     const data = await getJson(url);
     const hourly = data.hourly || {};
     const col = (name) => hourly[name] ?? hourly[`${name}_${model}`] ?? [];
@@ -38,10 +40,18 @@ function openMeteo(model) {
     const p = col('precipitation');
     const pp = col('precipitation_probability');
     const cc = col('cloud_cover');
+    const ws = col('wind_speed_10m');
+    const wg = col('wind_gusts_10m');
+    const code = col('weather_code'); // WMO-Code: 45/48 Nebel, 95–99 Gewitter
     const hours = new Map();
     time.forEach((sec, i) => {
       if (num(t[i]) === null) return;
-      hours.set(sec * 1000, { t: t[i], p: num(p[i]), pp: num(pp[i]), cc: num(cc[i]) });
+      const c = num(code[i]);
+      hours.set(sec * 1000, {
+        t: t[i], p: num(p[i]), pp: num(pp[i]), cc: num(cc[i]), ws: num(ws[i]), wg: num(wg[i]),
+        th: c === null ? null : c >= 95 && c <= 99,
+        fg: c === null ? null : c === 45 || c === 48,
+      });
     });
     return { hours, utcOffset: num(data.utc_offset_seconds) };
   };
@@ -58,21 +68,32 @@ async function metNorway(lat, lon) {
     const ms = Date.parse(row.time);
     const d = row.data?.instant?.details || {};
     if (num(d.air_temperature) === null) continue;
-    hours.set(ms, { t: d.air_temperature, p: null, pp: null, cc: num(d.cloud_area_fraction) });
+    const wind = num(d.wind_speed); // m/s
+    hours.set(ms, {
+      t: d.air_temperature, p: null, pp: null, cc: num(d.cloud_area_fraction),
+      ws: wind === null ? null : wind * 3.6, wg: null, th: null, fg: null,
+    });
   }
-  // MET Norway gibt den Niederschlag für die FOLGENDE Stunde an, die anderen
-  // Quellen für die VERGANGENE. Darum um eine Stunde verschieben.
+  // MET Norway gibt Niederschlag und Wettersymbol für die FOLGENDE Stunde an, die
+  // anderen Quellen für die VERGANGENE. Darum um eine Stunde verschieben.
   for (const row of series) {
-    const amount = num(row.data?.next_1_hours?.details?.precipitation_amount);
+    const next = row.data?.next_1_hours;
     const target = hours.get(Date.parse(row.time) + H);
-    if (amount !== null && target) target.p = amount;
+    if (!next || !target) continue;
+    const amount = num(next.details?.precipitation_amount);
+    if (amount !== null) target.p = amount;
+    const symbol = next.summary?.symbol_code;
+    if (typeof symbol === 'string') {
+      target.th = symbol.includes('thunder');
+      target.fg = symbol.startsWith('fog');
+    }
   }
   return { hours, utcOffset: null };
 }
 
 async function brightSky(lat, lon) {
   const start = new Date(Math.floor(Date.now() / H) * H);
-  const end = new Date(start.getTime() + 26 * H);
+  const end = new Date(start.getTime() + 50 * H);
   const url =
     'https://api.brightsky.dev/weather' +
     `?lat=${lat}&lon=${lon}&date=${start.toISOString()}&last_date=${end.toISOString()}`;
@@ -85,6 +106,10 @@ async function brightSky(lat, lon) {
       p: num(row.precipitation),
       pp: num(row.precipitation_probability),
       cc: num(row.cloud_cover),
+      ws: num(row.wind_speed),
+      wg: num(row.wind_gust_speed),
+      th: typeof row.condition === 'string' ? row.condition === 'thunderstorm' : null,
+      fg: typeof row.condition === 'string' ? row.condition === 'fog' : null,
     });
   }
   return { hours, utcOffset: null };

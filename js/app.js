@@ -11,8 +11,10 @@ const KIND = {
   clear: ['☀️', 'Klar'],
   partly: ['⛅', 'Teils bewölkt'],
   cloudy: ['☁️', 'Bewölkt'],
+  fog: ['🌫️', 'Nebel'],
   rain: ['🌧️', 'Regen'],
   snow: ['🌨️', 'Schnee'],
+  thunder: ['⛈️', 'Gewitter'],
 };
 
 const scene = new Scene($('scene'), (progress, playing) => {
@@ -48,16 +50,30 @@ function render(place, forecast, sources, loadedAt, stale) {
 
   const body = $('hours');
   body.replaceChildren();
+  const off = forecast.utcOffset ?? -new Date().getTimezoneOffset() * 60;
+  let lastDay = null;
   for (const h of forecast.hours) {
-    const [icon, text] = KIND[h.kind];
+    // Zwischenzeile bei jedem neuen Tag
+    const day = new Date(h.ms + off * 1000).toLocaleDateString('de-CH', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+    if (day !== lastDay) {
+      const head = el('tr', undefined, 'day');
+      const cell = el('td', day);
+      cell.colSpan = 8;
+      head.append(cell);
+      body.append(head);
+      lastDay = day;
+    }
+    const [icon, text] = KIND[h.kind] ?? KIND.cloudy;
+    const wind = h.wind === null || h.wind === undefined ? '–' : `${Math.round(h.wind)}` + (h.gust === null || h.gust === undefined ? '' : `/${Math.round(h.gust)}`);
     const row = el('tr');
     row.append(
       el('td', hourLabel(h.ms, forecast.utcOffset)),
-      el('td', `${icon} ${text}`),
+      el('td', `${icon} ${text}`, 'kind'),
       el('td', `${Math.round(h.temp)}°`, 'num strong'),
-      el('td', `${Math.round(h.tMin)}…${Math.round(h.tMax)}°`, 'num dim'),
-      el('td', `${h.precip.toFixed(1)} mm`, 'num'),
+      el('td', `${Math.round(h.tMin)}…${Math.round(h.tMax)}°`, 'num dim wide-only'),
+      el('td', h.precip.toFixed(1), 'num'),
       el('td', `${Math.round(h.prob * 100)} %`, 'num'),
+      el('td', wind, 'num'),
       el('td', h.confLabel, `conf conf-${h.confLabel}`),
     );
     body.append(row);
@@ -155,7 +171,7 @@ async function load(place) {
     }
 
     const start = Math.floor(loadedAt / H) * H;
-    const forecast = buildForecast(sources, start, 24);
+    const forecast = buildForecast(sources, start, 48);
     if (!forecast.hours.length) throw new Error('Keine Quelle hat Daten geliefert.');
     const summary = sources.map(({ id, label, ok, error }) => ({ id, label, ok, error }));
     localStorage.setItem(STORE_KEY, JSON.stringify({ place, forecast, sources: summary, loadedAt }));
