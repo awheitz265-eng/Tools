@@ -23,6 +23,54 @@ function seeded(n, seed = 7) {
 }
 const R = seeded(600);
 
+
+// Mondphase: 0 = Neumond, 0.5 = Vollmond (Näherung über die mittlere Lunation)
+function moonPhase(ms) {
+  const lunation = 29.530588853 * 86400e3;
+  return (((ms - 947182440000) % lunation) + lunation) % lunation / lunation;
+}
+
+// Höhenprofil einer Bergkette (Werte 0..1), aus überlagerten Wellen plus Zacken
+function makeRidge(seed, waves, jag) {
+  const n = 160;
+  const out = [];
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i <= n; i++) {
+    let v = 0;
+    waves.forEach(([freq, amp], k) => {
+      v += amp * Math.sin((i / n) * freq * Math.PI * 2 + R[seed + k] * 20);
+    });
+    v += jag * (R[(seed + i * 3) % 600] - 0.5);
+    out.push(v);
+    lo = Math.min(lo, v);
+    hi = Math.max(hi, v);
+  }
+  return out.map((v) => (v - lo) / (hi - lo));
+}
+
+// Weiche Wolke aus vielen überlagerten, nach aussen auslaufenden Ballen
+function makeCloudSprite(seed) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 256;
+  const g = c.getContext('2d');
+  for (let i = 0; i < 34; i++) {
+    const dx = R[seed + i] - 0.5; // -0.5..0.5 entlang der Wolke
+    const edge = 1 - Math.abs(dx) * 2; // 1 in der Mitte, 0 am Rand
+    const x = 256 + dx * 360;
+    const y = 168 - R[seed + i + 40] * 90 * edge;
+    const r = 26 + 46 * edge * (0.5 + R[seed + i + 80] * 0.5);
+    const grad = g.createRadialGradient(x, y, r * 0.15, x, y, r);
+    grad.addColorStop(0, 'rgba(255,255,255,0.8)');
+    grad.addColorStop(0.55, 'rgba(255,255,255,0.38)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  return c;
+}
+
 export class Scene {
   constructor(canvas, onProgress) {
     this.canvas = canvas;
@@ -34,6 +82,13 @@ export class Scene {
     this.last = 0;
     this.clock = 0;
     this.tick = this.tick.bind(this);
+    this.ridges = [
+      makeRidge(500, [[1.3, 1], [3.1, 0.55], [7.3, 0.28], [15, 0.12]], 0.16), // ferne Alpenkette
+      makeRidge(520, [[1.1, 1], [2.7, 0.4], [6.1, 0.15]], 0.04), // bewaldeter Höhenzug
+      makeRidge(540, [[0.8, 1], [2.2, 0.3]], 0), // Wiese im Vordergrund
+    ];
+    this.cloudShapes = [0, 97, 211, 313, 401, 150].map(makeCloudSprite);
+    this.cloudTint = { key: '', sprites: [] };
     new ResizeObserver(() => this.resize()).observe(canvas);
     this.resize();
   }
@@ -108,6 +163,8 @@ export class Scene {
       precip: lerp(a.precip, b.precip, k),
       prob: lerp(a.prob, b.prob, k),
       cloud: lerp(a.cloud ?? 50, b.cloud ?? 50, k),
+      rain: lerp(a.kind === 'rain' ? a.precip : 0, b.kind === 'rain' ? b.precip : 0, k),
+      snow: lerp(a.kind === 'snow' ? a.precip : 0, b.kind === 'snow' ? b.precip : 0, k),
       kind: near.kind,
       confLabel: near.confLabel,
       n: near.n,
@@ -137,182 +194,313 @@ export class Scene {
     const wet = s.kind === 'rain' || s.kind === 'snow';
     const horizon = h * 0.62;
 
-    // Himmel
-    const dusk = 1 - Math.abs(day - 0.5) * 2;
-    let top = mix([8, 14, 38], [52, 128, 214], day);
-    let bottom = mix([26, 36, 72], [164, 212, 246], day);
-    bottom = mix(bottom, [244, 150, 90], dusk * 0.6 * (1 - cover));
-    const grey = mix([44, 50, 62], [150, 160, 172], day);
-    top = mix(top, grey, cover * 0.75);
-    bottom = mix(bottom, mix(grey, [200, 205, 212], day * 0.5), cover * 0.75);
-    const sky = ctx.createLinearGradient(0, 0, 0, horizon);
-    sky.addColorStop(0, rgb(top));
-    sky.addColorStop(1, rgb(bottom));
+    // ---------- Licht und Stimmung ----------
+    const dusk = clamp01(1 - Math.abs(elev) / 10); // Sonne nahe am Horizont
+    const wetAmt = clamp01((s.rain + s.snow) / 2);
+    const gloom = clamp01(cover * 0.8 + wetAmt * 0.4); // wie trüb der Himmel ist
+    const clock = this.clock;
+
+    // ---------- Himmel ----------
+    let zenith = mix([6, 10, 28], [38, 104, 190], day);
+    let middle = mix([14, 20, 46], [112, 170, 226], day);
+    let low = mix([26, 34, 64], [190, 218, 240], day);
+    low = mix(low, [250, 166, 98], dusk * 0.75);
+    middle = mix(middle, [212, 142, 132], dusk * 0.35);
+    const greyHi = mix([28, 32, 42], [108, 118, 132], day);
+    const greyLo = mix([42, 46, 56], [178, 186, 196], day);
+    zenith = mix(zenith, greyHi, gloom);
+    middle = mix(middle, mix(greyHi, greyLo, 0.5), gloom);
+    low = mix(low, greyLo, gloom * 0.9);
+    const sky = ctx.createLinearGradient(0, 0, 0, horizon + u * 4);
+    sky.addColorStop(0, rgb(zenith));
+    sky.addColorStop(0.55, rgb(middle));
+    sky.addColorStop(1, rgb(low));
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, h);
 
     // Sterne
-    const starAlpha = (1 - day) * (1 - cover);
+    const starAlpha = (1 - day) * (1 - gloom);
     if (starAlpha > 0.05) {
-      for (let i = 0; i < 70; i++) {
-        const tw = 0.6 + 0.4 * Math.sin(this.clock / 500 + i);
-        ctx.fillStyle = `rgba(255,255,255,${starAlpha * tw})`;
-        ctx.fillRect(R[i] * w, R[i + 100] * horizon * 0.9, u * 0.45, u * 0.45);
-      }
-    }
-
-    // Sonne oder Mond
-    const local = ((s.ms / 3600e3 + place.lon / 15) % 24 + 24) % 24; // wahre Ortszeit
-    if (elev > -4) {
-      const x = w * (0.1 + 0.8 * clamp01((local - 5) / 14));
-      const y = horizon - (clamp01(elev / 60) * horizon * 0.72 + u * 2);
-      const glow = ctx.createRadialGradient(x, y, u * 2, x, y, u * 22);
-      glow.addColorStop(0, `rgba(255,236,170,${0.55 * (1 - cover * 0.7)})`);
-      glow.addColorStop(1, 'rgba(255,236,170,0)');
-      ctx.fillStyle = glow;
-      ctx.fillRect(x - u * 22, y - u * 22, u * 44, u * 44);
-      if (cover < 0.6) {
-        ctx.strokeStyle = `rgba(255,224,130,${0.5 * (1 - cover / 0.6)})`;
-        ctx.lineWidth = u * 0.7;
-        ctx.lineCap = 'round';
+      for (let i = 0; i < 110; i++) {
+        const tw = 0.55 + 0.45 * Math.sin(clock / (400 + R[i + 30] * 600) + i);
+        const size = u * (0.18 + R[i + 150] * 0.42);
+        ctx.fillStyle = `rgba(255,${240 + R[i] * 15},${220 + R[i + 60] * 35},${starAlpha * tw * (0.4 + R[i + 90] * 0.6)})`;
         ctx.beginPath();
-        for (let i = 0; i < 12; i++) {
-          const a = (i / 12) * Math.PI * 2 + this.clock / 6000;
-          const r1 = u * 8;
-          const r2 = u * (10.5 + (i % 2) * 1.8);
-          ctx.moveTo(x + Math.cos(a) * r1, y + Math.sin(a) * r1);
-          ctx.lineTo(x + Math.cos(a) * r2, y + Math.sin(a) * r2);
-        }
-        ctx.stroke();
+        ctx.arc(R[i] * w, R[i + 100] * horizon * 0.92, size, 0, Math.PI * 2);
+        ctx.fill();
       }
-      ctx.fillStyle = `rgba(255,214,90,${1 - cover * 0.6})`;
-      ctx.beginPath();
-      ctx.arc(x, y, u * 6, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
+    }
+
+    // Mond mit echter Phase
+    const moonAlpha = clamp01(1 - day / 0.6) * (1 - gloom * 0.9);
+    if (moonAlpha > 0.03) {
       const x = w * 0.78;
-      const y = horizon * 0.24;
-      ctx.fillStyle = `rgba(235,238,250,${0.95 - cover * 0.7})`;
+      const y = horizon * 0.22;
+      const r = u * 4;
+      const glow = ctx.createRadialGradient(x, y, r, x, y, r * 6);
+      glow.addColorStop(0, `rgba(200,214,255,${0.28 * moonAlpha})`);
+      glow.addColorStop(1, 'rgba(200,214,255,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(x - r * 6, y - r * 6, r * 12, r * 12);
+      ctx.fillStyle = `rgba(236,238,246,${moonAlpha})`;
       ctx.beginPath();
-      ctx.arc(x, y, u * 5, 0, Math.PI * 2);
+      ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = rgb(top);
+      const ph = moonPhase(s.ms);
+      const k = Math.cos(ph * 2 * Math.PI); // 1 = Neumond, -1 = Vollmond
+      const waxing = ph < 0.5;
+      ctx.fillStyle = rgb(zenith, 0.93 * moonAlpha);
       ctx.beginPath();
-      ctx.arc(x + u * 2.2, y - u * 1.2, u * 4.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Wolken
-    const cloudCount = Math.round(cover * 9);
-    const tone = wet ? mix([70, 76, 90], [128, 136, 150], day) : mix([86, 94, 112], [250, 251, 254], day);
-    for (let i = 0; i < cloudCount; i++) {
-      const size = u * (9 + R[i + 200] * 9);
-      const speed = 0.004 + R[i + 220] * 0.006;
-      const span = w + size * 8;
-      const x = ((R[i + 240] * span + this.clock * speed * u) % span) - size * 4;
-      const y = horizon * (0.12 + R[i + 260] * 0.5);
-      ctx.fillStyle = rgb(tone, 0.82);
-      ctx.beginPath();
-      ctx.arc(x, y, size, 0, Math.PI * 2);
-      ctx.arc(x + size * 1.1, y - size * 0.45, size * 1.15, 0, Math.PI * 2);
-      ctx.arc(x + size * 2.3, y, size * 0.95, 0, Math.PI * 2);
-      ctx.arc(x + size * 1.1, y + size * 0.35, size * 1.1, 0, Math.PI * 2);
+      ctx.arc(x, y, r * 1.02, -Math.PI / 2, Math.PI / 2, waxing); // dunkle Seite
+      ctx.ellipse(x, y, Math.abs(k) * r * 1.02, r * 1.02, 0, Math.PI / 2, -Math.PI / 2, waxing ? k > 0 : k < 0);
       ctx.fill();
     }
 
-    // Landschaft
-    const hillY = (x, base, amp, phase) =>
-      base - amp * (Math.sin((x / w) * 5 + phase) * 0.6 + Math.sin((x / w) * 11 + phase * 2) * 0.4);
-    const hill = (base, amp, color, phase) => {
-      ctx.fillStyle = color;
+    // Sonne: weicher Lichthof, nahe am Horizont rötlich
+    if (elev > -8) {
+      const local = ((s.ms / 3600e3 + place.lon / 15) % 24 + 24) % 24; // wahre Ortszeit
+      const x = w * (0.08 + 0.84 * clamp01((local - 5) / 14));
+      const y = horizon - Math.min(elev / 60, 1) * horizon * 0.75;
+      const power = 1 - gloom * 0.85;
+      const tint = mix([255, 150, 70], [255, 244, 214], clamp01(elev / 14));
+      const halo = ctx.createRadialGradient(x, y, 0, x, y, u * 46);
+      halo.addColorStop(0, rgb(tint, 0.85 * power + 0.1));
+      halo.addColorStop(0.12, rgb(tint, 0.42 * power + 0.05));
+      halo.addColorStop(0.45, rgb(tint, 0.12 * power));
+      halo.addColorStop(1, rgb(tint, 0));
+      ctx.fillStyle = halo;
+      ctx.fillRect(x - u * 46, y - u * 46, u * 92, u * 92);
+      if (power > 0.25) {
+        const disc = ctx.createRadialGradient(x, y, 0, x, y, u * 4.2);
+        disc.addColorStop(0, `rgba(255,255,250,${power})`);
+        disc.addColorStop(0.8, rgb(tint, power));
+        disc.addColorStop(1, rgb(tint, 0));
+        ctx.fillStyle = disc;
+        ctx.beginPath();
+        ctx.arc(x, y, u * 4.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // ---------- Wolken ----------
+    // Eingefärbte Wolkenbilder nur neu berechnen, wenn sich das Licht merklich ändert
+    const tintKey = `${Math.round(day * 12)}|${Math.round(gloom * 8)}|${Math.round(dusk * 4)}`;
+    if (this.cloudTint.key !== tintKey) {
+      let lit = mix([74, 82, 104], [255, 255, 255], day);
+      lit = mix(lit, [255, 208, 170], dusk * 0.6);
+      lit = mix(lit, mix([52, 58, 72], [150, 156, 166], day), gloom * 0.85);
+      let shade = mix([26, 30, 44], [150, 166, 190], day);
+      shade = mix(shade, mix([18, 21, 30], [72, 78, 90], day), gloom);
+      this.cloudTint = {
+        key: tintKey,
+        sprites: this.cloudShapes.map((shape) => {
+          const c = document.createElement('canvas');
+          c.width = shape.width;
+          c.height = shape.height;
+          const g = c.getContext('2d');
+          g.drawImage(shape, 0, 0);
+          g.globalCompositeOperation = 'source-atop';
+          const grad = g.createLinearGradient(0, 60, 0, 200);
+          grad.addColorStop(0, rgb(lit));
+          grad.addColorStop(1, rgb(shade));
+          g.fillStyle = grad;
+          g.fillRect(0, 0, c.width, c.height);
+          return c;
+        }),
+      };
+    }
+    const sprites = this.cloudTint.sprites;
+    const cloudLayer = (count, seed, scaleLo, scaleHi, yLo, yHi, speed, alpha) => {
+      ctx.globalAlpha = alpha;
+      for (let i = 0; i < count; i++) {
+        const cw = u * 62 * lerp(scaleLo, scaleHi, R[seed + i]);
+        const span = w + cw * 1.5;
+        const x = ((R[seed + i + 20] * span + clock * speed * u * (0.7 + R[seed + i + 40] * 0.6)) % span) - cw;
+        const y = horizon * lerp(yLo, yHi, R[seed + i + 60]) - cw * 0.3;
+        ctx.drawImage(sprites[(seed + i) % sprites.length], x, y, cw, cw / 2);
+      }
+      ctx.globalAlpha = 1;
+    };
+    cloudLayer(Math.round(1 + cover * 9), 300, 0.5, 0.9, 0.36, 0.7, 0.0018, 0.9); // fern, klein, langsam
+    if (cover > 0.55) {
+      // geschlossene Wolkendecke
+      const veil = ctx.createLinearGradient(0, 0, 0, horizon);
+      const a = ((cover - 0.55) / 0.45) * 0.6;
+      veil.addColorStop(0, rgb(greyHi, a));
+      veil.addColorStop(1, rgb(greyLo, a * 0.7));
+      ctx.fillStyle = veil;
+      ctx.fillRect(0, 0, w, horizon + u * 4);
+    }
+    cloudLayer(Math.round(cover * 9), 350, 1.1, 1.9, 0.1, 0.44, 0.0045, 1); // nah, gross, schneller
+
+    // ---------- Landschaft ----------
+    const snowGround = s.temp <= 0.5 ? clamp01(s.snow / 0.4) * 0.85 : 0;
+    const ridgePath = (ridge, base, amp) => {
       ctx.beginPath();
       ctx.moveTo(0, h);
-      for (let i = 0; i <= 40; i++) ctx.lineTo((w * i) / 40, hillY((w * i) / 40, base, amp, phase));
+      ridge.forEach((v, i) => ctx.lineTo((w * i) / (ridge.length - 1), base - amp * v));
       ctx.lineTo(w, h);
-      ctx.fill();
+      ctx.closePath();
     };
-    const snowy = s.temp <= 0.5 && s.kind === 'snow';
-    const backColor = mix([20, 30, 48], snowy ? [200, 212, 224] : [74, 122, 104], day);
-    const frontColor = mix([14, 22, 36], snowy ? [226, 234, 242] : [52, 98, 78], day);
-    const treeColor = mix([8, 14, 24], snowy ? [150, 170, 180] : [30, 68, 56], day);
-    hill(horizon + u * 2, u * 5, rgb(backColor), 1);
+    const ridgeY = (ridge, base, amp, x) => {
+      const pos = clamp01(x / w) * (ridge.length - 1);
+      const i = Math.min(Math.floor(pos), ridge.length - 2);
+      return base - amp * lerp(ridge[i], ridge[i + 1], pos - i);
+    };
 
-    // Tannen auf dem hinteren Hügel
-    ctx.fillStyle = rgb(treeColor);
-    for (let i = 0; i < 9; i++) {
-      const x = w * (0.04 + R[i + 400] * 0.92);
-      const y = hillY(x, horizon + u * 2, u * 5, 1) + u * 0.8;
-      const th = u * (5 + R[i + 420] * 4);
+    // ferne Alpenkette, vom Dunst aufgehellt, mit Schnee auf den Gipfeln
+    const farBase = horizon + u * 2;
+    const farAmp = u * 21;
+    const rock = mix(mix([16, 22, 40], [78, 100, 132], day), low, 0.45 + gloom * 0.3);
+    ridgePath(this.ridges[0], farBase, farAmp);
+    ctx.fillStyle = rgb(rock);
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    const caps = ctx.createLinearGradient(0, farBase - farAmp, 0, farBase - farAmp * 0.45);
+    const capColor = mix(mix([120, 130, 160], [250, 252, 255], day), [255, 214, 190], dusk * 0.5);
+    caps.addColorStop(0, rgb(capColor, 0.85 * (1 - gloom * 0.5)));
+    caps.addColorStop(1, rgb(capColor, 0));
+    ctx.fillStyle = caps;
+    ctx.fillRect(0, farBase - farAmp, w, farAmp);
+    ctx.restore();
+
+    // Dunst und Niederschlagsschleier vor den Bergen
+    const haze = ctx.createLinearGradient(0, horizon - u * 22, 0, horizon + u * 6);
+    haze.addColorStop(0, rgb(low, 0));
+    haze.addColorStop(1, rgb(low, 0.18 + wetAmt * 0.6 + cover * 0.2));
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, horizon - u * 22, w, u * 28);
+
+    // bewaldeter Höhenzug
+    const midBase = horizon + u * 5;
+    const midAmp = u * 9;
+    let forest = mix([9, 15, 24], [38, 68, 62], day);
+    forest = mix(forest, low, 0.18 + wetAmt * 0.2);
+    forest = mix(forest, [226, 234, 242], snowGround * 0.5);
+    ctx.fillStyle = rgb(forest);
+    for (let i = 0; i < 90; i++) {
+      // Tannenspitzen entlang der Kante
+      const x = (w * (i + R[i + 420])) / 90;
+      const y = ridgeY(this.ridges[1], midBase, midAmp, x) + u * 0.4;
+      const th = u * (1.6 + R[i + 440] * 2);
       ctx.beginPath();
       ctx.moveTo(x, y - th);
-      ctx.lineTo(x + th * 0.32, y);
-      ctx.lineTo(x - th * 0.32, y);
+      ctx.lineTo(x + th * 0.3, y);
+      ctx.lineTo(x - th * 0.3, y);
+      ctx.fill();
+    }
+    ridgePath(this.ridges[1], midBase, midAmp);
+    ctx.fill();
+
+    // Wiese im Vordergrund
+    const nearBase = horizon + u * 11;
+    const nearAmp = u * 3.5;
+    let grassTop = mix([10, 16, 22], [92, 136, 84], day);
+    let grassLow = mix([6, 10, 14], [48, 86, 56], day);
+    grassTop = mix(mix(grassTop, [96, 104, 100], gloom * 0.35 * day), [232, 238, 246], snowGround);
+    grassLow = mix(grassLow, [190, 202, 216], snowGround);
+    ridgePath(this.ridges[2], nearBase, nearAmp);
+    const meadow = ctx.createLinearGradient(0, nearBase - nearAmp, 0, h);
+    meadow.addColorStop(0, rgb(grassTop));
+    meadow.addColorStop(1, rgb(grassLow));
+    ctx.fillStyle = meadow;
+    ctx.fill();
+    if (s.rain > 0.05) {
+      // nasser Boden spiegelt den Himmel leicht
+      ctx.fillStyle = rgb(low, 0.1 + clamp01(s.rain / 3) * 0.12);
       ctx.fill();
     }
 
-    hill(horizon + u * 9, u * 4, rgb(frontColor), 4);
-
-    // Haus auf dem vorderen Hügel, nachts mit Licht im Fenster
+    // Haus mit Fensterlicht
     {
       const x = w * 0.7;
-      const y = hillY(x, horizon + u * 9, u * 4, 4) + u * 0.6;
-      const hw = u * 5;
-      const hh = u * 4.2;
-      ctx.fillStyle = rgb(mix([34, 40, 58], [236, 228, 214], day));
+      const y = ridgeY(this.ridges[2], nearBase, nearAmp, x) + u * 0.5;
+      const hw = u * 3.4;
+      const hh = u * 2.9;
+      ctx.fillStyle = rgb(mix([24, 28, 40], [226, 218, 204], day));
       ctx.fillRect(x - hw, y - hh, hw * 2, hh);
-      ctx.fillStyle = rgb(mix([22, 26, 40], snowy ? [240, 244, 248] : [150, 78, 62], day));
+      ctx.fillStyle = rgb(mix(mix([14, 17, 26], [112, 64, 54], day), [236, 240, 246], snowGround));
       ctx.beginPath();
       ctx.moveTo(x - hw * 1.2, y - hh);
-      ctx.lineTo(x, y - hh - u * 3.4);
+      ctx.lineTo(x, y - hh - u * 2.5);
       ctx.lineTo(x + hw * 1.2, y - hh);
       ctx.fill();
-      ctx.fillStyle = day < 0.5 ? 'rgba(255,214,120,0.95)' : rgb(mix([60, 80, 110], [120, 160, 200], day));
-      ctx.fillRect(x - hw * 0.6, y - hh * 0.72, u * 1.8, u * 1.8);
-      ctx.fillRect(x + hw * 0.6 - u * 1.8, y - hh * 0.72, u * 1.8, u * 1.8);
+      const lit = clamp01(1 - day / 0.5);
+      if (lit > 0) {
+        const glow = ctx.createRadialGradient(x, y - hh * 0.5, 0, x, y - hh * 0.5, u * 9);
+        glow.addColorStop(0, `rgba(255,196,110,${0.3 * lit})`);
+        glow.addColorStop(1, 'rgba(255,196,110,0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(x - u * 9, y - hh * 0.5 - u * 9, u * 18, u * 18);
+      }
+      ctx.fillStyle = lit > 0 ? `rgba(255,214,130,${0.5 + lit * 0.5})` : rgb(mix([60, 80, 110], [96, 124, 150], day));
+      ctx.fillRect(x - hw * 0.62, y - hh * 0.72, u * 1.2, u * 1.2);
+      ctx.fillRect(x + hw * 0.62 - u * 1.2, y - hh * 0.72, u * 1.2, u * 1.2);
     }
 
-    // Spritzer am Boden bei Regen
-    if (s.kind === 'rain') {
-      ctx.strokeStyle = 'rgba(200,222,255,0.5)';
-      ctx.lineWidth = Math.max(1, u * 0.25);
-      for (let i = 0; i < 14; i++) {
-        const phase = (this.clock / 700 + R[i + 440]) % 1;
+    // ---------- Niederschlag in drei Tiefenebenen ----------
+    const t = clock / 1000;
+    if (s.rain > 0.03) {
+      const power = 0.25 + clamp01(s.rain / 3) * 0.75;
+      const tone = mix([150, 170, 205], [214, 228, 246], day);
+      [[150, 2.2, 0.22, 0.25, 0.9], [90, 3.8, 0.32, 0.36, 1.25], [40, 6.5, 0.5, 0.5, 1.7]].forEach(
+        ([count, len, width, alpha, speed], layer) => {
+          ctx.strokeStyle = rgb(tone, alpha);
+          ctx.lineWidth = Math.max(1, u * width);
+          ctx.beginPath();
+          const n = Math.round(count * power);
+          for (let i = 0; i < n; i++) {
+            const k = (i * 7 + layer * 131) % 600;
+            const x = R[k] * w * 1.15;
+            const y = ((R[(k + 211) % 600] + t * speed * (0.9 + R[(k + 97) % 600] * 0.2)) % 1) * (h + u * 8) - u * 4;
+            ctx.moveTo(x, y);
+            ctx.lineTo(x - u * len * 0.22, y + u * len);
+          }
+          ctx.stroke();
+        },
+      );
+      // Spritzer am Boden
+      ctx.strokeStyle = rgb(tone, 0.45);
+      ctx.lineWidth = Math.max(1, u * 0.22);
+      for (let i = 0; i < Math.round(18 * power); i++) {
+        const phase = (clock / 600 + R[i + 440]) % 1;
         const x = R[i + 460] * w;
-        const y = horizon + u * (8 + R[i + 480] * 14);
+        const y = nearBase + u * (1 + R[i + 480] * 12);
         ctx.globalAlpha = 1 - phase;
         ctx.beginPath();
-        ctx.ellipse(x, y, u * (0.5 + phase * 2), u * (0.2 + phase * 0.6), 0, 0, Math.PI * 2);
+        ctx.ellipse(x, y, u * (0.4 + phase * 1.8), u * (0.15 + phase * 0.5), 0, 0, Math.PI * 2);
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
     }
-
-    // Niederschlag
-    if (wet) {
-      const amount = Math.round(40 + clamp01(s.precip / 3) * 160);
-      const t = this.clock / 1000;
-      if (s.kind === 'rain') {
-        ctx.strokeStyle = 'rgba(200,222,255,0.6)';
-        ctx.lineWidth = Math.max(1, u * 0.3);
-        ctx.beginPath();
-        for (let i = 0; i < amount; i++) {
-          const x = R[i + 300] * w * 1.1;
-          const y = ((R[i] + t * (1.1 + R[i + 50] * 0.5)) % 1) * h;
-          ctx.moveTo(x, y);
-          ctx.lineTo(x - u * 0.8, y + u * 3.2);
-        }
-        ctx.stroke();
-      } else {
-        ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        for (let i = 0; i < amount; i++) {
-          const y = ((R[i] + t * (0.12 + R[i + 50] * 0.1)) % 1) * h;
-          const x = R[i + 300] * w + Math.sin(t + i) * u * 2;
+    if (s.snow > 0.03) {
+      const power = 0.3 + clamp01(s.snow / 2) * 0.7;
+      [[140, 0.35, 0.5, 0.06], [80, 0.6, 0.7, 0.09], [36, 1.05, 0.9, 0.13]].forEach(([count, size, alpha, speed], layer) => {
+        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        const n = Math.round(count * power);
+        for (let i = 0; i < n; i++) {
+          const k = (i * 7 + layer * 131) % 600;
+          const y = ((R[(k + 211) % 600] + t * speed * (0.8 + R[(k + 97) % 600] * 0.4)) % 1) * h;
+          const x = R[k] * w + Math.sin(t * 0.8 + k) * u * (1.5 + layer);
           ctx.beginPath();
-          ctx.arc(x, y, u * (0.4 + R[i + 100] * 0.5), 0, Math.PI * 2);
+          ctx.arc(x, y, u * size * (0.7 + R[(k + 50) % 600] * 0.6), 0, Math.PI * 2);
           ctx.fill();
         }
-      }
+      });
     }
+
+    // ---------- Bildwirkung: Randabdunklung und Lesehilfe für den Text ----------
+    const vignette = ctx.createRadialGradient(w / 2, h * 0.45, Math.min(w, h) * 0.35, w / 2, h * 0.45, Math.max(w, h) * 0.8);
+    vignette.addColorStop(0, 'rgba(0,0,0,0)');
+    vignette.addColorStop(1, 'rgba(0,0,0,0.38)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, w, h);
+    const scrim = ctx.createLinearGradient(0, 0, w * 0.85, 0);
+    scrim.addColorStop(0, 'rgba(0,0,0,0.32)');
+    scrim.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = scrim;
+    ctx.fillRect(0, 0, w * 0.85, horizon * 0.95);
 
     // Texte
     const off = this.data.utcOffset ?? -new Date(s.ms).getTimezoneOffset() * 60;
