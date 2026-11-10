@@ -11,6 +11,22 @@ export const FULL_HOURS = 168; // ab hier zählt nur noch die eigene Auswertung
 export const emptyStore = () => ({ version: 1, pending: {}, stats: {}, truth: null });
 export const placeKey = (lat, lon) => `${lat.toFixed(2)},${lon.toFixed(2)}`;
 
+// Schlüssel für einen Ort. Liegt schon ein gemerkter Ort in der Nähe (rund 3 km), wird
+// dessen Schlüssel verwendet: der GPS-Standort schwankt leicht und soll trotzdem
+// denselben Ort treffen.
+export function resolveKey(store, lat, lon) {
+  for (const key of Object.keys(store.pending)) {
+    const [la, lo] = key.split(',').map(Number);
+    if (Math.abs(la - lat) <= 0.03 && Math.abs(lo - lon) <= 0.04) return key;
+  }
+  return placeKey(lat, lon);
+}
+
+// Wie viele gemerkte Stunden noch auf den Vergleich warten
+export function pendingCount(store) {
+  return Object.values(store.pending).reduce((sum, place) => sum + Object.keys(place).length, 0);
+}
+
 // Vorhersagen für die kommenden 24 Stunden merken. Eine bereits gemerkte Vorhersage
 // wird nicht überschrieben: bewertet wird die früheste, nicht die kurz vor Eintritt.
 export function recordForecasts(store, key, results, nowMs) {

@@ -1,5 +1,5 @@
 import { SOURCES, fetchAll, fetchTruth, searchPlaces } from './sources.js';
-import { emptyStore, placeKey, recordForecasts, evaluate, prune, learnedWeights, report, MIN_HOURS, FULL_HOURS } from './verify.js';
+import { emptyStore, resolveKey, pendingCount, recordForecasts, evaluate, prune, learnedWeights, report, MIN_HOURS, FULL_HOURS } from './verify.js';
 import { buildForecast } from './ensemble.js';
 import { Scene } from './scene.js';
 
@@ -105,6 +105,15 @@ function renderVerify() {
     body.append(row);
   }
   const basis = store.truth ? ` Vergleichsdaten zuletzt: ${store.truth.label}.` : '';
+  const waiting = pendingCount(store);
+  const last = store.last;
+  $('verify-status').textContent =
+    `Gemerkt und noch nicht verglichen: ${waiting} Stunden. ` +
+    (!last
+      ? 'Vergleichsdaten wurden noch nie abgerufen.'
+      : last.error
+        ? `Letzter Abruf der Vergleichsdaten fehlgeschlagen: ${last.error}.`
+        : `Letzter Abruf der Vergleichsdaten: ${last.label}, ${last.hours} Stunden erhalten, ${last.evaluated} davon ausgewertet.`);
   $('verify-info').textContent =
     total === 0
       ? 'Noch keine Auswertung. Die App merkt sich jede Vorhersage und vergleicht sie beim nächsten Öffnen mit dem eingetretenen Wetter. Dafür die App mindestens alle zwei bis drei Tage öffnen.'
@@ -119,14 +128,19 @@ async function load(place) {
   try {
     const [sources, truth] = await Promise.all([
       fetchAll(place.lat, place.lon),
-      fetchTruth(place.lat, place.lon).catch(() => null),
+      fetchTruth(place.lat, place.lon).catch((e) => ({ error: e.message })),
     ]);
     const loadedAt = Date.now();
 
     // Auswertung: alte Vorhersagen prüfen, neue merken, Gewichte daraus ableiten
     const store = readVerify();
-    const key = placeKey(place.lat, place.lon);
-    if (truth && evaluate(store, key, truth.hours, loadedAt) > 0) store.truth = { kind: truth.kind, label: truth.label };
+    const key = resolveKey(store, place.lat, place.lon);
+    const evaluated = truth.error ? 0 : evaluate(store, key, truth.hours, loadedAt);
+    if (evaluated > 0) store.truth = { kind: truth.kind, label: truth.label };
+    // Stand des letzten Abrufs, damit sichtbar ist, ob die Auswertung funktioniert
+    store.last = truth.error
+      ? { at: loadedAt, error: truth.error }
+      : { at: loadedAt, label: truth.label, hours: truth.hours.size, evaluated };
     recordForecasts(store, key, sources, loadedAt);
     prune(store, loadedAt);
     try {

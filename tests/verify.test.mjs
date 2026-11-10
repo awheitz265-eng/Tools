@@ -76,3 +76,14 @@ test('report und placeKey', () => {
   assert.equal(report(store, SOURCES)[1].mae, null);
   assert.equal(placeKey(47.0512, 8.3049), '47.05,8.30');
 });
+
+import { resolveKey, pendingCount } from '../js/verify.js';
+
+test('leicht schwankender Standort trifft denselben gemerkten Ort', () => {
+  const store = emptyStore();
+  store.pending['47.05,8.31'] = { 1: {}, 2: {} };
+  assert.equal(resolveKey(store, 47.0449, 8.3151), '47.05,8.31');
+  assert.equal(resolveKey(store, 47.2, 8.31), '47.20,8.31');
+  assert.equal(pendingCount(store), 2);
+  assert.equal(pendingCount(emptyStore()), 0);
+});
