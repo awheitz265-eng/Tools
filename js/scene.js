@@ -496,11 +496,12 @@ export class Scene {
     vignette.addColorStop(1, 'rgba(0,0,0,0.38)');
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, w, h);
-    const scrim = ctx.createLinearGradient(0, 0, w * 0.85, 0);
-    scrim.addColorStop(0, 'rgba(0,0,0,0.32)');
+    // Abdunklung hinter dem Text: läuft nach allen Seiten weich aus, ohne Kante
+    const scrim = ctx.createRadialGradient(w * 0.1, horizon * 0.3, 0, w * 0.1, horizon * 0.3, Math.max(w * 0.8, horizon * 0.62));
+    scrim.addColorStop(0, 'rgba(0,0,0,0.34)');
     scrim.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = scrim;
-    ctx.fillRect(0, 0, w * 0.85, horizon * 0.95);
+    ctx.fillRect(0, 0, w, h);
 
     // Texte
     const off = this.data.utcOffset ?? -new Date(s.ms).getTimezoneOffset() * 60;
