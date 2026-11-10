@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="de-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Wetterkonsens</title>
+  <meta name="description" content="Wahrscheinlichstes Wetter der nächsten 24 Stunden aus mehreren freien Wetterquellen.">
+  <meta name="theme-color" content="#101a2e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Wetterkonsens</h1>
+    <form id="search" role="search">
+      <input id="query" type="search" placeholder="Ort eingeben, z.B. Luzern" autocomplete="off" enterkeyhint="search" aria-label="Ort">
+      <button type="submit">Suchen</button>
+      <button type="button" id="locate" class="secondary">Mein Standort</button>
+    </form>
+    <div id="results" class="results"></div>
+    <p id="status" class="status" role="status" hidden></p>
+  </header>
+
+  <main id="result" hidden>
+    <h2 id="place"></h2>
+    <p id="meta" class="meta"></p>
+
+    <div class="stage">
+      <canvas id="scene" aria-label="Animierte Wettervorhersage"></canvas>
+    </div>
+    <div class="controls">
+      <button type="button" id="play">Pause</button>
+      <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Zeitpunkt">
+    </div>
+
+    <h3>Stunde für Stunde</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Zeit</th><th>Wetter</th><th class="num">Temp.</th><th class="num">Spanne</th><th class="num">Menge</th><th class="num">Risiko</th><th>Konfidenz</th></tr>
+        </thead>
+        <tbody id="hours"></tbody>
+      </table>
+    </div>
+
+    <details>
+      <summary>Quellen und Methode</summary>
+      <ul id="sources" class="sources"></ul>
+      <p>Temperatur, Niederschlagsmenge und Bewölkung sind der Median aller Quellen. Das Niederschlagsrisiko ist der Anteil der Quellen mit Niederschlag, gemittelt mit deren eigenen Wahrscheinlichkeiten. Die Konfidenz ist eine Faustregel: Sie sinkt, je weiter die Quellen auseinanderliegen.</p>
+    </details>
+  </main>
+
+  <footer>
+    Wetterdaten: <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0), <a href="https://api.met.no/">MET Norway</a>, Deutscher Wetterdienst via <a href="https://brightsky.dev/">Bright Sky</a>. Private, nichtkommerzielle Nutzung.
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
