@@ -26,12 +26,26 @@ Gewichteter Median statt einfachem Median. Die Gewichte sind eine begründete Ei
 
 Belegstand: Die Angaben stützen sich nur auf Auszüge aus Suchergebnissen (ECMWF-, DWD-, MET-Norway- und meteoblue-Seiten). Die Originalseiten konnten in der Entwicklungsumgebung nicht geöffnet werden. Ein direkter Vergleich genau dieser sieben Quellen für Europa wurde nicht gefunden. Verlässlicher wäre eine eigene Auswertung: Vorhersagen speichern und später mit Messwerten vergleichen.
 
+## Eigene Auswertung der Trefferquote (Stand 10.11.2026)
+- Bei jedem Laden merkt sich die App die Vorhersage jeder Quelle für die kommenden 24 Stunden (pro Ort, nur auf dem Gerät). Bewertet wird die früheste gemerkte Vorhersage einer Stunde.
+- Beim nächsten Laden desselben Orts werden vergangene Stunden mit dem eingetretenen Wetter verglichen: mittlerer Temperaturfehler, Tendenz (zu warm/zu kalt), Trefferquote nass/trocken (Schwelle 0.1 mm).
+- Vergleichsdaten: zuerst DWD-Stationsmessungen via Bright Sky; wenn keine Station in Reichweite ist, die Modellanalyse von Open-Meteo.
+- Gewichte: ab 24 ausgewerteten Stunden fliesst die Auswertung ein, ab 168 Stunden zählt nur noch sie. Temperatur: Kehrwert des quadrierten mittleren Fehlers. Niederschlag: Kehrwert der Fehlerquote nass/trocken. Begrenzt auf 0.3 bis 2.5.
+- Vorhersagen ohne Vergleichsdaten verfallen nach 72 Stunden. Die App muss also mindestens alle zwei bis drei Tage geöffnet werden.
+
+Grenzen:
+- Die Modellanalyse ist keine Messung. Sie stammt selbst aus einem Wettermodell und kann verwandte Quellen bevorzugen.
+- Welche Vergleichsdaten Bright Sky ausserhalb Deutschlands liefert, ist ungeprüft; die App zeigt an, welche Art zuletzt verwendet wurde.
+- Die Auswertung fasst alle Orte zusammen und unterscheidet nicht nach Vorlaufzeit.
+- Die Abhängigkeit zwischen ECMWF und MET Norway wird durch gelernte Gewichte nicht mehr berücksichtigt.
+
 ## Etappen
 1. [x] MVP: PWA, Ortssuche, Standort, Quellen, Konsens, Animation, Stundentabelle
 2. [x] Test mit echten Daten auf dem Gerät: alle sieben Quellen liefern (Rückmeldung 10.11.2026)
 3. [x] GitHub Pages aktivieren, App auf Handy und iPad installieren
 4. [x] Gewichtung der Quellen, detailliertere Animation (Titelbild, Zusammenfassung, Landschaft, Zeitleiste)
-5. [ ] Weiterer Feinschliff nach Rückmeldung (z.B. Favoriten, eigene Auswertung der Trefferquote)
+5. [x] Eigene Auswertung der Trefferquote mit lernenden Gewichten
+6. [ ] Weiterer Feinschliff nach Rückmeldung (z.B. Favoriten)
 
 ## Offene Punkte
 - Die echten Schnittstellen konnten in der Entwicklungsumgebung nicht aufgerufen werden (Netzwerk gesperrt). Getestet ist nur mit nachgebildeten Antworten. Adressen, Parameter und Modellnamen stammen aus dem Gedächtnis und sind nicht gegen die Dokumentation geprüft.

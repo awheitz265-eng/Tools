@@ -1,6 +1,6 @@
 // Hält die App-Dateien für den Offline-Start bereit. Wetterdaten werden nie gecacht.
-const CACHE = 'wetter-v2';
-const SHELL = ['./', 'index.html', 'style.css', 'manifest.webmanifest', 'js/app.js', 'js/sources.js', 'js/ensemble.js', 'js/scene.js', 'icons/icon.svg', 'icons/icon-192.png'];
+const CACHE = 'wetter-v3';
+const SHELL = ['./', 'index.html', 'style.css', 'manifest.webmanifest', 'js/app.js', 'js/sources.js', 'js/ensemble.js', 'js/scene.js', 'js/verify.js', 'icons/icon.svg', 'icons/icon-192.png'];
 
 self.addEventListener('install', (ev) => {
   ev.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

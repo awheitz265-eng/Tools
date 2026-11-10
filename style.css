@@ -75,6 +75,12 @@ th { font-size: 0.8rem; font-weight: 600; color: var(--dim); background: var(--p
 
 details { margin-top: 20px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
 summary { cursor: pointer; font-weight: 600; }
+details h3 { margin-top: 18px; }
+details .table-wrap { background: var(--bg); font-size: 0.85rem; }
+details button { margin-top: 12px; }
+.compact th, .compact td { padding: 7px 4px; }
+details .table-wrap.compact { font-size: 0.78rem; }
+.compact td:first-child { white-space: normal; }
 details p { color: var(--dim); font-size: 0.9rem; margin: 8px 0 0; }
 .sources { list-style: none; padding: 0; margin: 10px 0 0; font-size: 0.9rem; }
 .sources li { padding: 3px 0; }

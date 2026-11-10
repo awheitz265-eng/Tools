@@ -32,13 +32,15 @@ const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
 export function combineHour(entries) {
   // [Wert, Gewicht] je Quelle; ohne Angabe zählt jede Quelle gleich (Gewicht 1)
-  const pick = (key) =>
-    entries.filter((e) => e[key] !== null && e[key] !== undefined).map((e) => [e[key], e.w ?? 1]);
+  // Niederschlag hat ein eigenes Gewicht (wp), falls vorhanden
+  const pick = (key, weight = (e) => e.w ?? 1) =>
+    entries.filter((e) => e[key] !== null && e[key] !== undefined).map((e) => [e[key], weight(e)]);
+  const rainWeight = (e) => e.wp ?? e.w ?? 1;
   const tw = pick('t');
   if (!tw.length) return null;
   const t = tw.map(([v]) => v);
-  const p = pick('p');
-  const pp = pick('pp');
+  const p = pick('p', rainWeight);
+  const pp = pick('pp', rainWeight);
   const cc = pick('cc');
 
   const temp = weightedMedian(tw);
@@ -74,7 +76,7 @@ export function buildForecast(results, startMs, count = 24) {
     const ms = startMs + i * H;
     const entries = ok
       .filter((r) => r.hours.has(ms))
-      .map((r) => ({ ...r.hours.get(ms), w: r.weight ?? 1 }));
+      .map((r) => ({ ...r.hours.get(ms), w: r.weight ?? 1, wp: r.weightP ?? r.weight ?? 1 }));
     const combined = combineHour(entries);
     if (combined) hours.push({ ms, ...combined });
   }

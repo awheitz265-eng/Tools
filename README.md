@@ -6,6 +6,7 @@ Private Wetter-App (PWA) für Android-Handy und iPad. Sie liest mehrere kostenlo
 
 - Kein Build-Schritt, kein Server, keine API-Schlüssel: reine statische Dateien.
 - Quellen: Open-Meteo (Modelle von DWD, ECMWF, Météo-France, UK Met Office, NOAA), MET Norway, DWD MOSMIX via Bright Sky. Fällt eine Quelle aus, rechnet die App mit den übrigen; der Abschnitt «Quellen und Methode» in der App zeigt den Status jeder Quelle.
+- Auswertung: Die App merkt sich die Vorhersage jeder Quelle, vergleicht sie beim nächsten Öffnen mit dem eingetretenen Wetter und passt die Gewichte der Quellen daran an. Die Daten bleiben auf dem Gerät.
 - Nur für private, nichtkommerzielle Nutzung (Bedingung der Gratis-Tarife).
 
 ### Lokal starten
@@ -19,7 +20,7 @@ Danach `http://localhost:8765/` öffnen.
 ### Tests
 
 ```bash
-node --test tests/ensemble.test.mjs
+node --test tests/*.test.mjs
 ```
 
 Plan und offene Punkte: [PLAN.md](PLAN.md)

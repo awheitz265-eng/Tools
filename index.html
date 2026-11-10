@@ -49,7 +49,20 @@
       <summary>Quellen und Methode</summary>
       <ul id="sources" class="sources"></ul>
       <p>Temperatur, Niederschlagsmenge und Bewölkung sind der gewichtete Median aller Quellen. Das Niederschlagsrisiko ist der gewichtete Anteil der Quellen mit Niederschlag, gemittelt mit deren eigenen Wahrscheinlichkeiten. Die Konfidenz ist eine Faustregel: Sie sinkt, je weiter die Quellen auseinanderliegen.</p>
-      <p>Gewichte: nachbearbeitete Punktvorhersage (MOSMIX) und ECMWF höher, GFS tiefer. MET Norway liefert ausserhalb Nordeuropas ECMWF-Daten und zählt deshalb nur als Teil der ECMWF-Stimme. Die Gewichte sind eine begründete Einschätzung, nicht gemessen.</p>
+      <p>Ausgangsgewichte: nachbearbeitete Punktvorhersage (MOSMIX) und ECMWF höher, GFS tiefer. MET Norway liefert ausserhalb Nordeuropas ECMWF-Daten und zählt deshalb nur als Teil der ECMWF-Stimme. Diese Werte sind eine Einschätzung und werden nach und nach durch die eigene Auswertung ersetzt.</p>
+
+      <h3>Trefferquote der Quellen</h3>
+      <p id="verify-info"></p>
+      <div class="table-wrap compact">
+        <table>
+          <thead>
+            <tr><th>Quelle</th><th class="num">Std.</th><th class="num">Fehler</th><th class="num">Tend.</th><th class="num">Regen</th><th class="num">Gew. T</th><th class="num">Gew. N</th></tr>
+          </thead>
+          <tbody id="verify"></tbody>
+        </table>
+      </div>
+      <p>Std.: ausgewertete Stunden. Fehler: mittlere Abweichung der Temperatur in Grad. Tend.: plus heisst, die Quelle sagt zu warm voraus. Regen: Anteil der Stunden, in denen nass oder trocken richtig vorhergesagt war. Gew. T / Gew. N: aktuelles Gewicht für Temperatur und Niederschlag. Bewertet wird die jeweils früheste gemerkte Vorhersage für eine Stunde. Die Daten liegen nur auf diesem Gerät.</p>
+      <button type="button" id="verify-reset" class="secondary">Auswertung zurücksetzen</button>
     </details>
   </main>
 

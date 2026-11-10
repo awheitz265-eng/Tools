@@ -115,6 +115,47 @@ export async function fetchAll(lat, lon, sources = SOURCES) {
   });
 }
 
+// Tatsächlich eingetretenes Wetter der letzten drei Tage, für die Auswertung.
+// 1. Wahl: Stationsmessungen des DWD (via Bright Sky), soweit eine Station in der Nähe liegt.
+// 2. Wahl: Modellanalyse von Open-Meteo. Das ist KEINE Messung, sondern die beste
+//    nachträgliche Schätzung eines Modells, und kann verwandte Quellen bevorzugen.
+export async function fetchTruth(lat, lon) {
+  const now = Date.now();
+  try {
+    const url =
+      'https://api.brightsky.dev/weather' +
+      `?lat=${lat}&lon=${lon}&date=${new Date(now - 72 * H).toISOString()}&last_date=${new Date(now).toISOString()}`;
+    const data = await getJson(url);
+    const stations = new Map((data.sources || []).map((s) => [s.id, s]));
+    const hours = new Map();
+    let station = null;
+    for (const row of data.weather || []) {
+      const src = stations.get(row.source_id);
+      if (!src || src.observation_type === 'forecast' || num(row.temperature) === null) continue;
+      hours.set(Date.parse(row.timestamp), { t: row.temperature, p: num(row.precipitation) });
+      station = src;
+    }
+    if (hours.size >= 6) {
+      const km = num(station.distance) !== null ? `, ${Math.round(station.distance / 1000)} km entfernt` : '';
+      return { kind: 'obs', label: `Stationsmessung ${station.station_name || 'DWD'}${km}`, hours };
+    }
+  } catch {
+    // keine Station in Reichweite oder Dienst nicht erreichbar: weiter mit der Modellanalyse
+  }
+  const url =
+    'https://api.open-meteo.com/v1/forecast' +
+    `?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,precipitation` +
+    '&past_days=3&forecast_days=1&timeformat=unixtime&timezone=GMT';
+  const data = await getJson(url);
+  const hourly = data.hourly || {};
+  const hours = new Map();
+  (hourly.time || []).forEach((sec, i) => {
+    if (sec * 1000 > now || num(hourly.temperature_2m?.[i]) === null) return;
+    hours.set(sec * 1000, { t: hourly.temperature_2m[i], p: num(hourly.precipitation?.[i]) });
+  });
+  return { kind: 'analysis', label: 'Modellanalyse von Open-Meteo (keine Stationsmessung)', hours };
+}
+
 export async function searchPlaces(name) {
   const url =
     'https://geocoding-api.open-meteo.com/v1/search' +

@@ -1,10 +1,12 @@
-import { fetchAll, searchPlaces } from './sources.js';
+import { SOURCES, fetchAll, fetchTruth, searchPlaces } from './sources.js';
+import { emptyStore, placeKey, recordForecasts, evaluate, prune, learnedWeights, report, MIN_HOURS, FULL_HOURS } from './verify.js';
 import { buildForecast } from './ensemble.js';
 import { Scene } from './scene.js';
 
 const $ = (id) => document.getElementById(id);
 const H = 3600e3;
 const STORE_KEY = 'wetter.letzterStand';
+const VERIFY_KEY = 'wetter.auswertung';
 const KIND = {
   clear: ['☀️', 'Klar'],
   partly: ['⛅', 'Teils bewölkt'],
@@ -64,25 +66,84 @@ function render(place, forecast, sources, loadedAt, stale) {
   const list = $('sources');
   list.replaceChildren();
   for (const s of sources) {
-    const weight = s.weight ? ` · Gewicht ${s.weight}` : '';
-    const item = el('li', `${s.ok ? '✓' : '✗'} ${s.label}${s.ok ? weight : ` – ${s.error}`}`);
+    const item = el('li', `${s.ok ? '✓' : '✗'} ${s.label}${s.ok ? '' : ` – ${s.error}`}`);
     item.className = s.ok ? 'ok' : 'fail';
     list.append(item);
   }
 
+  renderVerify();
   scene.setData(forecast, place);
+}
+
+function readVerify() {
+  try {
+    const store = JSON.parse(localStorage.getItem(VERIFY_KEY));
+    return store?.version === 1 ? store : emptyStore();
+  } catch {
+    return emptyStore();
+  }
+}
+
+function renderVerify() {
+  const store = readVerify();
+  const rows = report(store, SOURCES);
+  const total = Math.max(...rows.map((r) => r.hours));
+  const body = $('verify');
+  body.replaceChildren();
+  const fmt = (v, digits, unit = '') => (v === null ? '–' : `${v.toFixed(digits)}${unit}`);
+  for (const r of rows) {
+    const row = el('tr');
+    row.append(
+      el('td', r.label.replace(/ \(via .*\)$/, '')),
+      el('td', String(r.hours), 'num'),
+      el('td', fmt(r.mae, 1, '°'), 'num strong'),
+      el('td', r.bias === null ? '–' : `${r.bias > 0 ? '+' : ''}${r.bias.toFixed(1)}°`, 'num dim'),
+      el('td', r.hit === null ? '–' : `${Math.round(r.hit * 100)} %`, 'num'),
+      el('td', r.w.toFixed(2), 'num'),
+      el('td', r.wp.toFixed(2), 'num'),
+    );
+    body.append(row);
+  }
+  const basis = store.truth ? ` Vergleichsdaten zuletzt: ${store.truth.label}.` : '';
+  $('verify-info').textContent =
+    total === 0
+      ? 'Noch keine Auswertung. Die App merkt sich jede Vorhersage und vergleicht sie beim nächsten Öffnen mit dem eingetretenen Wetter. Dafür die App mindestens alle zwei bis drei Tage öffnen.'
+      : total < MIN_HOURS
+        ? `${total} Stunden ausgewertet. Ab ${MIN_HOURS} Stunden fliesst die Auswertung in die Gewichte ein.${basis}`
+        : `${total} Stunden ausgewertet. Die Gewichte stammen zu ${Math.round(Math.min(1, total / FULL_HOURS) * 100)} % aus der eigenen Auswertung.${basis}`;
 }
 
 async function load(place) {
   setStatus(`Lade Vorhersage für ${place.name} …`);
   $('results').replaceChildren();
   try {
-    const sources = await fetchAll(place.lat, place.lon);
-    const start = Math.floor(Date.now() / H) * H;
+    const [sources, truth] = await Promise.all([
+      fetchAll(place.lat, place.lon),
+      fetchTruth(place.lat, place.lon).catch(() => null),
+    ]);
+    const loadedAt = Date.now();
+
+    // Auswertung: alte Vorhersagen prüfen, neue merken, Gewichte daraus ableiten
+    const store = readVerify();
+    const key = placeKey(place.lat, place.lon);
+    if (truth && evaluate(store, key, truth.hours, loadedAt) > 0) store.truth = { kind: truth.kind, label: truth.label };
+    recordForecasts(store, key, sources, loadedAt);
+    prune(store, loadedAt);
+    try {
+      localStorage.setItem(VERIFY_KEY, JSON.stringify(store));
+    } catch {
+      // Speicher voll oder gesperrt: Vorhersage trotzdem anzeigen
+    }
+    const weights = learnedWeights(store, SOURCES);
+    for (const s of sources) {
+      s.weight = weights[s.id].w;
+      s.weightP = weights[s.id].wp;
+    }
+
+    const start = Math.floor(loadedAt / H) * H;
     const forecast = buildForecast(sources, start, 24);
     if (!forecast.hours.length) throw new Error('Keine Quelle hat Daten geliefert.');
-    const summary = sources.map(({ id, label, weight, ok, error }) => ({ id, label, weight, ok, error }));
-    const loadedAt = Date.now();
+    const summary = sources.map(({ id, label, ok, error }) => ({ id, label, ok, error }));
     localStorage.setItem(STORE_KEY, JSON.stringify({ place, forecast, sources: summary, loadedAt }));
     setStatus('');
     render(place, forecast, summary, loadedAt, false);
@@ -145,6 +206,12 @@ $('locate').addEventListener('click', () => {
       ),
     { timeout: 15000, maximumAge: 600000 },
   );
+});
+
+$('verify-reset').addEventListener('click', () => {
+  if (!confirm('Auswertung wirklich löschen? Die Gewichte fallen auf die Ausgangswerte zurück.')) return;
+  localStorage.removeItem(VERIFY_KEY);
+  renderVerify();
 });
 
 $('play').addEventListener('click', () => scene.toggle());
