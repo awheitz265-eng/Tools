@@ -90,23 +90,28 @@ async function brightSky(lat, lon) {
   return { hours, utcOffset: null };
 }
 
+// Gewichte: Begründung und Belegstand siehe PLAN.md, Abschnitt «Gewichtung».
+// 1.0 = neutral (keine Belege für eine Abweichung gefunden).
 export const SOURCES = [
-  { id: 'icon', label: 'DWD ICON (via Open-Meteo)', load: openMeteo('icon_seamless') },
-  { id: 'ecmwf', label: 'ECMWF IFS (via Open-Meteo)', load: openMeteo('ecmwf_ifs025') },
-  { id: 'meteofrance', label: 'Météo-France (via Open-Meteo)', load: openMeteo('meteofrance_seamless') },
-  { id: 'ukmo', label: 'UK Met Office (via Open-Meteo)', load: openMeteo('ukmo_seamless') },
-  { id: 'gfs', label: 'NOAA GFS (via Open-Meteo)', load: openMeteo('gfs_seamless') },
-  { id: 'metno', label: 'MET Norway', load: metNorway },
-  { id: 'brightsky', label: 'DWD MOSMIX (via Bright Sky)', load: brightSky },
+  { id: 'icon', label: 'DWD ICON (via Open-Meteo)', weight: 1.0, load: openMeteo('icon_seamless') },
+  // ECMWF und MET Norway zusammen 2.0: MET Norway liefert ausserhalb Nordeuropas
+  // ECMWF-Daten, die beiden sind also keine unabhängigen Stimmen.
+  { id: 'ecmwf', label: 'ECMWF IFS (via Open-Meteo)', weight: 1.25, load: openMeteo('ecmwf_ifs025') },
+  { id: 'meteofrance', label: 'Météo-France (via Open-Meteo)', weight: 1.0, load: openMeteo('meteofrance_seamless') },
+  { id: 'ukmo', label: 'UK Met Office (via Open-Meteo)', weight: 1.0, load: openMeteo('ukmo_seamless') },
+  { id: 'gfs', label: 'NOAA GFS (via Open-Meteo)', weight: 0.7, load: openMeteo('gfs_seamless') },
+  { id: 'metno', label: 'MET Norway', weight: 0.75, load: metNorway },
+  // statistisch nachbearbeitete Punktvorhersage (aus ICON und ECMWF)
+  { id: 'brightsky', label: 'DWD MOSMIX (via Bright Sky)', weight: 1.5, load: brightSky },
 ];
 
 export async function fetchAll(lat, lon, sources = SOURCES) {
   const settled = await Promise.allSettled(sources.map((s) => s.load(lat, lon)));
   return settled.map((r, i) => {
-    const { id, label } = sources[i];
-    if (r.status === 'rejected') return { id, label, ok: false, error: r.reason.message };
-    if (r.value.hours.size === 0) return { id, label, ok: false, error: 'keine Daten für diesen Ort' };
-    return { id, label, ok: true, ...r.value };
+    const { id, label, weight = 1 } = sources[i];
+    if (r.status === 'rejected') return { id, label, weight, ok: false, error: r.reason.message };
+    if (r.value.hours.size === 0) return { id, label, weight, ok: false, error: 'keine Daten für diesen Ort' };
+    return { id, label, weight, ok: true, ...r.value };
   });
 }
 

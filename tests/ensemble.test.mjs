@@ -65,3 +65,30 @@ test('Sonnenhöhe Zürich: Mittag im Juni hoch, Mitternacht negativ', () => {
   assert.ok(noon > 63 && noon < 67, `noon=${noon}`);
   assert.ok(night < -15, `night=${night}`);
 });
+
+import { weightedMedian } from '../js/ensemble.js';
+
+test('gewichteter Median', () => {
+  assert.equal(weightedMedian([[1, 1], [2, 1], [3, 1]]), 2);
+  assert.equal(weightedMedian([[1, 1], [2, 1], [3, 1], [4, 1]]), 2.5);
+  assert.equal(weightedMedian([[1, 1], [2, 1], [10, 5]]), 10);
+  assert.equal(weightedMedian([[5, 0.7]]), 5);
+  assert.equal(weightedMedian([]), null);
+});
+
+test('Gewichte verschieben Konsens und Niederschlagsanteil', () => {
+  const h = combineHour([
+    { t: 5, p: 0, pp: null, cc: 10, w: 0.7 },
+    { t: 6, p: 0, pp: null, cc: 20, w: 1 },
+    { t: 9, p: 1, pp: null, cc: 90, w: 3 },
+  ]);
+  assert.equal(h.temp, 9);
+  assert.equal(h.kind, 'rain');
+  assert.ok(Math.abs(h.prob - 3 / 4.7) < 1e-9);
+});
+
+test('buildForecast reicht das Gewicht der Quelle durch', () => {
+  const mk = (t, weight) => ({ ok: true, weight, utcOffset: 0, hours: new Map([[0, { t, p: 0, pp: 0, cc: 0 }]]) });
+  const f = buildForecast([mk(1, 1), mk(2, 1), mk(8, 5)], 0, 1);
+  assert.equal(f.hours[0].temp, 8);
+});

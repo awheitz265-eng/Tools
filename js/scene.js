@@ -1,7 +1,9 @@
 // Animierte Wettersequenz: spielt die Vorhersage als kurzen «Film» auf einem Canvas ab.
 import { sunElevation } from './ensemble.js';
 
-const DURATION = 20000; // ms für die ganze Sequenz
+const DURATION = 28000; // ms für die ganze Sequenz
+const INTRO = 0.06; // Anteil Titelbild am Anfang
+const OUTRO = 0.92; // ab hier Zusammenfassung
 const KIND_TEXT = { clear: 'Klar', partly: 'Teils bewölkt', cloudy: 'Bewölkt', rain: 'Regen', snow: 'Schnee' };
 
 const lerp = (a, b, f) => a + (b - a) * f;
@@ -46,7 +48,7 @@ export class Scene {
   }
 
   setData(forecast, place) {
-    this.data = { ...forecast, place };
+    this.data = { ...forecast, place, summary: summarize(forecast.hours) };
     this.progress = 0;
     this.play();
   }
@@ -126,7 +128,8 @@ export class Scene {
       return;
     }
 
-    const s = this.stateAt(this.progress);
+    const main = clamp01((this.progress - INTRO) / (OUTRO - INTRO)); // Anteil der 24 Stunden
+    const s = this.stateAt(main);
     const { place } = this.data;
     const elev = sunElevation(s.ms, place.lat, place.lon);
     const day = clamp01((elev + 6) / 12); // 0 = Nacht, 1 = Tag, dazwischen Dämmerung
@@ -168,6 +171,20 @@ export class Scene {
       glow.addColorStop(1, 'rgba(255,236,170,0)');
       ctx.fillStyle = glow;
       ctx.fillRect(x - u * 22, y - u * 22, u * 44, u * 44);
+      if (cover < 0.6) {
+        ctx.strokeStyle = `rgba(255,224,130,${0.5 * (1 - cover / 0.6)})`;
+        ctx.lineWidth = u * 0.7;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2 + this.clock / 6000;
+          const r1 = u * 8;
+          const r2 = u * (10.5 + (i % 2) * 1.8);
+          ctx.moveTo(x + Math.cos(a) * r1, y + Math.sin(a) * r1);
+          ctx.lineTo(x + Math.cos(a) * r2, y + Math.sin(a) * r2);
+        }
+        ctx.stroke();
+      }
       ctx.fillStyle = `rgba(255,214,90,${1 - cover * 0.6})`;
       ctx.beginPath();
       ctx.arc(x, y, u * 6, 0, Math.PI * 2);
@@ -204,21 +221,71 @@ export class Scene {
     }
 
     // Landschaft
+    const hillY = (x, base, amp, phase) =>
+      base - amp * (Math.sin((x / w) * 5 + phase) * 0.6 + Math.sin((x / w) * 11 + phase * 2) * 0.4);
     const hill = (base, amp, color, phase) => {
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.moveTo(0, h);
-      for (let i = 0; i <= 40; i++) {
-        const x = (w * i) / 40;
-        const y = base - amp * (Math.sin((x / w) * 5 + phase) * 0.6 + Math.sin((x / w) * 11 + phase * 2) * 0.4);
-        ctx.lineTo(x, y);
-      }
+      for (let i = 0; i <= 40; i++) ctx.lineTo((w * i) / 40, hillY((w * i) / 40, base, amp, phase));
       ctx.lineTo(w, h);
       ctx.fill();
     };
     const snowy = s.temp <= 0.5 && s.kind === 'snow';
-    hill(horizon + u * 2, u * 5, rgb(mix([20, 30, 48], snowy ? [200, 212, 224] : [74, 122, 104], day)), 1);
-    hill(horizon + u * 9, u * 4, rgb(mix([14, 22, 36], snowy ? [226, 234, 242] : [52, 98, 78], day)), 4);
+    const backColor = mix([20, 30, 48], snowy ? [200, 212, 224] : [74, 122, 104], day);
+    const frontColor = mix([14, 22, 36], snowy ? [226, 234, 242] : [52, 98, 78], day);
+    const treeColor = mix([8, 14, 24], snowy ? [150, 170, 180] : [30, 68, 56], day);
+    hill(horizon + u * 2, u * 5, rgb(backColor), 1);
+
+    // Tannen auf dem hinteren Hügel
+    ctx.fillStyle = rgb(treeColor);
+    for (let i = 0; i < 9; i++) {
+      const x = w * (0.04 + R[i + 400] * 0.92);
+      const y = hillY(x, horizon + u * 2, u * 5, 1) + u * 0.8;
+      const th = u * (5 + R[i + 420] * 4);
+      ctx.beginPath();
+      ctx.moveTo(x, y - th);
+      ctx.lineTo(x + th * 0.32, y);
+      ctx.lineTo(x - th * 0.32, y);
+      ctx.fill();
+    }
+
+    hill(horizon + u * 9, u * 4, rgb(frontColor), 4);
+
+    // Haus auf dem vorderen Hügel, nachts mit Licht im Fenster
+    {
+      const x = w * 0.7;
+      const y = hillY(x, horizon + u * 9, u * 4, 4) + u * 0.6;
+      const hw = u * 5;
+      const hh = u * 4.2;
+      ctx.fillStyle = rgb(mix([34, 40, 58], [236, 228, 214], day));
+      ctx.fillRect(x - hw, y - hh, hw * 2, hh);
+      ctx.fillStyle = rgb(mix([22, 26, 40], snowy ? [240, 244, 248] : [150, 78, 62], day));
+      ctx.beginPath();
+      ctx.moveTo(x - hw * 1.2, y - hh);
+      ctx.lineTo(x, y - hh - u * 3.4);
+      ctx.lineTo(x + hw * 1.2, y - hh);
+      ctx.fill();
+      ctx.fillStyle = day < 0.5 ? 'rgba(255,214,120,0.95)' : rgb(mix([60, 80, 110], [120, 160, 200], day));
+      ctx.fillRect(x - hw * 0.6, y - hh * 0.72, u * 1.8, u * 1.8);
+      ctx.fillRect(x + hw * 0.6 - u * 1.8, y - hh * 0.72, u * 1.8, u * 1.8);
+    }
+
+    // Spritzer am Boden bei Regen
+    if (s.kind === 'rain') {
+      ctx.strokeStyle = 'rgba(200,222,255,0.5)';
+      ctx.lineWidth = Math.max(1, u * 0.25);
+      for (let i = 0; i < 14; i++) {
+        const phase = (this.clock / 700 + R[i + 440]) % 1;
+        const x = R[i + 460] * w;
+        const y = horizon + u * (8 + R[i + 480] * 14);
+        ctx.globalAlpha = 1 - phase;
+        ctx.beginPath();
+        ctx.ellipse(x, y, u * (0.5 + phase * 2), u * (0.2 + phase * 0.6), 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
 
     // Niederschlag
     if (wet) {
@@ -273,35 +340,117 @@ export class Scene {
     ctx.fillText(`Konfidenz ${s.confLabel} · ${s.n} Quellen`, pad, pad + u * 55, w - pad * 2);
     ctx.shadowBlur = 0;
 
-    this.drawTimeline(w, h, u, pad);
+    this.drawTimeline(w, h, u, pad, main);
+    this.drawIntroOutro(w, h, u, pad);
   }
 
-  // Temperaturkurve und Niederschlagsbalken mit Abspielmarke
-  drawTimeline(w, h, u, pad) {
+  // Titelbild am Anfang, Zusammenfassung am Schluss
+  drawIntroOutro(w, h, u, pad) {
+    const { ctx } = this;
+    const { place, summary, hours, sourceCount } = this.data;
+    const p = this.progress;
+    const off = this.data.utcOffset ?? -new Date(hours[0].ms).getTimezoneOffset() * 60;
+    const clock = (ms) => `${String(new Date(ms + off * 1000).getUTCHours()).padStart(2, '0')}:00`;
+
+    const intro = clamp01(1 - (p - INTRO * 0.6) / (INTRO * 0.4));
+    if (p < INTRO && intro > 0) {
+      ctx.fillStyle = `rgba(10,16,30,${0.88 * intro})`;
+      ctx.fillRect(0, 0, w, h);
+      ctx.globalAlpha = intro;
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.font = `800 ${u * 10}px system-ui, sans-serif`;
+      ctx.fillText(place.name, w / 2, h * 0.42, w - pad * 2);
+      ctx.font = `500 ${u * 4.6}px system-ui, sans-serif`;
+      const date = new Date(hours[0].ms + off * 1000).toLocaleDateString('de-CH', {
+        weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC',
+      });
+      ctx.fillText(date, w / 2, h * 0.42 + u * 8, w - pad * 2);
+      ctx.fillStyle = '#ffb347';
+      ctx.fillText(`Die nächsten ${hours.length} Stunden · ${sourceCount ?? '–'} Quellen`, w / 2, h * 0.42 + u * 15, w - pad * 2);
+      ctx.globalAlpha = 1;
+    }
+
+    const outro = clamp01((p - OUTRO) / 0.03);
+    if (outro > 0) {
+      const lines = [
+        ['Temperatur', `${Math.round(summary.lo)}° bis ${Math.round(summary.hi)}°`],
+        ['Niederschlag', summary.wet ? `${summary.total.toFixed(1)} mm in ${summary.wet} Std.` : 'keiner erwartet'],
+        ['Nass', summary.wet ? `${clock(summary.wetFrom)} bis ${clock(summary.wetTo + 3600e3)}` : '–'],
+        ['Konfidenz', summary.confText],
+      ];
+      const bw = Math.min(w - pad * 2, u * 88);
+      const bh = u * (16 + lines.length * 8.5);
+      const bx = (w - bw) / 2;
+      const by = h * 0.4 - bh / 2;
+      ctx.globalAlpha = outro;
+      ctx.fillStyle = 'rgba(10,16,30,0.95)';
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bw, bh, u * 4);
+      ctx.fill();
+      ctx.fillStyle = '#ffb347';
+      ctx.textAlign = 'left';
+      ctx.font = `700 ${u * 5.4}px system-ui, sans-serif`;
+      ctx.fillText('Zusammenfassung', bx + u * 6, by + u * 10);
+      lines.forEach(([label, value], i) => {
+        const y = by + u * (20 + i * 8.5);
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.textAlign = 'left';
+        ctx.font = `500 ${u * 4.2}px system-ui, sans-serif`;
+        ctx.fillText(label, bx + u * 6, y);
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'right';
+        ctx.font = `700 ${u * 4.6}px system-ui, sans-serif`;
+        ctx.fillText(value, bx + bw - u * 6, y, bw * 0.62);
+      });
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Zeitleiste: Tag/Nacht, Streuung der Quellen, Temperaturkurve, Niederschlag, Uhrzeiten
+  drawTimeline(w, h, u, pad, main) {
     const { ctx } = this;
     const hrs = this.data.hours;
+    const { place } = this.data;
     const x0 = pad;
     const x1 = w - pad;
-    const y1 = h - pad * 0.9;
+    const y1 = h - pad * 0.9 - u * 5;
     const y0 = y1 - Math.min(h * 0.16, u * 22);
     const xs = (i) => (hrs.length > 1 ? lerp(x0, x1, i / (hrs.length - 1)) : (x0 + x1) / 2);
-    ctx.fillStyle = 'rgba(8,14,28,0.5)';
+    const step = hrs.length > 1 ? (x1 - x0) / (hrs.length - 1) : 0;
+    ctx.fillStyle = 'rgba(8,14,28,0.55)';
     ctx.beginPath();
-    ctx.roundRect(x0 - u * 3, y0 - u * 7, x1 - x0 + u * 6, y1 - y0 + u * 11, u * 3);
+    ctx.roundRect(x0 - u * 3, y0 - u * 7, x1 - x0 + u * 6, y1 - y0 + u * 16, u * 3);
     ctx.fill();
 
-    const temps = hrs.map((x) => x.temp);
-    const lo = Math.min(...temps);
-    const hi = Math.max(...temps);
+    // Nachtstunden abdunkeln
+    ctx.fillStyle = 'rgba(0,0,10,0.35)';
+    hrs.forEach((x, i) => {
+      if (sunElevation(x.ms, place.lat, place.lon) >= 0) return;
+      const a = Math.max(x0, xs(i) - step / 2);
+      const b = Math.min(x1, xs(i) + step / 2);
+      ctx.fillRect(a, y0 - u, b - a, y1 - y0 + u * 2);
+    });
+
+    const lo = Math.min(...hrs.map((x) => x.tMin ?? x.temp));
+    const hi = Math.max(...hrs.map((x) => x.tMax ?? x.temp));
     const ys = (t) => (hi - lo < 0.5 ? (y0 + y1) / 2 : lerp(y1 - u * 2, y0 + u * 2, (t - lo) / (hi - lo)));
 
-    const barW = Math.max(2, ((x1 - x0) / hrs.length) * 0.55);
-    ctx.fillStyle = 'rgba(110,180,255,0.75)';
+    // Niederschlag
+    const barW = Math.max(2, step * 0.55);
     hrs.forEach((x, i) => {
       if (x.precip < 0.05) return;
       const bh = clamp01(x.precip / 4) * (y1 - y0) * 0.9 + u;
+      ctx.fillStyle = `rgba(110,180,255,${0.35 + 0.5 * clamp01(x.prob)})`;
       ctx.fillRect(xs(i) - barW / 2, y1 - bh, barW, bh);
     });
+
+    // Streuung der Quellen (kälteste bis wärmste)
+    ctx.fillStyle = 'rgba(255,179,71,0.22)';
+    ctx.beginPath();
+    hrs.forEach((x, i) => (i ? ctx.lineTo(xs(i), ys(x.tMax ?? x.temp)) : ctx.moveTo(xs(i), ys(x.tMax ?? x.temp))));
+    for (let i = hrs.length - 1; i >= 0; i--) ctx.lineTo(xs(i), ys(hrs[i].tMin ?? hrs[i].temp));
+    ctx.fill();
 
     ctx.strokeStyle = '#ffb347';
     ctx.lineWidth = Math.max(2, u * 0.7);
@@ -313,16 +462,54 @@ export class Scene {
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.font = `500 ${u * 3.2}px system-ui, sans-serif`;
     ctx.textAlign = 'left';
-    ctx.fillText(`${Math.round(hi)}° max`, x0, y0 - u * 2.2);
+    ctx.fillText(`Temperatur mit Streuung der Quellen`, x0, y0 - u * 2.2, (x1 - x0) * 0.62);
     ctx.textAlign = 'right';
-    ctx.fillText(`${Math.round(lo)}° min`, x1, y0 - u * 2.2);
+    ctx.fillStyle = 'rgba(140,195,255,0.95)';
+    ctx.fillText('Niederschlag', x1, y0 - u * 2.2);
 
-    const px = lerp(x0, x1, this.progress);
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = Math.max(1.5, u * 0.5);
+    // Uhrzeiten
+    const off = this.data.utcOffset ?? -new Date(hrs[0].ms).getTimezoneOffset() * 60;
+    const every = w / u > 110 ? 2 : 3;
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.textAlign = 'center';
+    ctx.font = `500 ${u * 2.9}px system-ui, sans-serif`;
+    hrs.forEach((x, i) => {
+      const hour = new Date(x.ms + off * 1000).getUTCHours();
+      if (hour % every) return;
+      ctx.fillText(String(hour).padStart(2, '0'), xs(i), y1 + u * 5);
+      ctx.fillRect(xs(i) - u * 0.1, y1 + u * 0.6, u * 0.2, u * 1.2);
+    });
+
+    // Abspielmarke mit Punkt auf der Kurve
+    const px = lerp(x0, x1, main);
+    const st = this.stateAt(main);
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = Math.max(1.5, u * 0.4);
     ctx.beginPath();
     ctx.moveTo(px, y0 - u);
     ctx.lineTo(px, y1 + u);
     ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(px, ys(st.temp), u * 1.3, 0, Math.PI * 2);
+    ctx.fill();
   }
+}
+
+// Kennzahlen für die Zusammenfassung am Schluss
+function summarize(hours) {
+  const wetHours = hours.filter((x) => x.kind === 'rain' || x.kind === 'snow');
+  const count = (label) => hours.filter((x) => x.confLabel === label).length;
+  const [hoch, mittel, tief] = [count('hoch'), count('mittel'), count('tief')];
+  const top = Math.max(hoch, mittel, tief);
+  const main = top === hoch ? 'hoch' : top === mittel ? 'mittel' : 'tief';
+  return {
+    lo: Math.min(...hours.map((x) => x.temp)),
+    hi: Math.max(...hours.map((x) => x.temp)),
+    total: wetHours.reduce((sum, x) => sum + x.precip, 0),
+    wet: wetHours.length,
+    wetFrom: wetHours[0]?.ms,
+    wetTo: wetHours[wetHours.length - 1]?.ms,
+    confText: `meist ${main} (${top}/${hours.length} Std.)`,
+  };
 }

@@ -12,26 +12,45 @@ export function median(values) {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
-const mean = (values) => values.reduce((a, b) => a + b, 0) / values.length;
+// Gewichteter Median: der Wert, bei dem die Hälfte des Gesamtgewichts erreicht ist.
+// pairs = [[Wert, Gewicht], ...]
+export function weightedMedian(pairs) {
+  if (!pairs.length) return null;
+  const s = [...pairs].sort((a, b) => a[0] - b[0]);
+  const half = s.reduce((sum, [, w]) => sum + w, 0) / 2;
+  let acc = 0;
+  for (let i = 0; i < s.length; i++) {
+    acc += s[i][1];
+    if (Math.abs(acc - half) < 1e-9 && i + 1 < s.length) return (s[i][0] + s[i + 1][0]) / 2;
+    if (acc > half) return s[i][0];
+  }
+  return s[s.length - 1][0];
+}
+
+const wsum = (pairs) => pairs.reduce((sum, [, w]) => sum + w, 0);
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
 export function combineHour(entries) {
-  const pick = (key) => entries.map((e) => e[key]).filter((v) => v !== null && v !== undefined);
-  const t = pick('t');
-  if (!t.length) return null;
+  // [Wert, Gewicht] je Quelle; ohne Angabe zählt jede Quelle gleich (Gewicht 1)
+  const pick = (key) =>
+    entries.filter((e) => e[key] !== null && e[key] !== undefined).map((e) => [e[key], e.w ?? 1]);
+  const tw = pick('t');
+  if (!tw.length) return null;
+  const t = tw.map(([v]) => v);
   const p = pick('p');
   const pp = pick('pp');
   const cc = pick('cc');
 
-  const temp = median(t);
+  const temp = weightedMedian(tw);
   const tMin = Math.min(...t);
   const tMax = Math.max(...t);
-  const precip = p.length ? median(p) : 0;
-  const wetShare = p.length ? p.filter((v) => v >= WET_MM).length / p.length : 0;
-  // Risiko = Anteil der Quellen mit Niederschlag, gemittelt mit deren eigenen
-  // Wahrscheinlichkeitsangaben (falls vorhanden).
-  const prob = pp.length ? (wetShare + mean(pp) / 100) / 2 : wetShare;
-  const cloud = cc.length ? median(cc) : null;
+  const precip = p.length ? weightedMedian(p) : 0;
+  const wetShare = p.length ? wsum(p.filter(([v]) => v >= WET_MM)) / wsum(p) : 0;
+  // Risiko = gewichteter Anteil der Quellen mit Niederschlag, gemittelt mit deren
+  // eigenen Wahrscheinlichkeitsangaben (falls vorhanden).
+  const ppMean = pp.length ? pp.reduce((sum, [v, w]) => sum + v * w, 0) / wsum(pp) : null;
+  const prob = ppMean !== null ? (wetShare + ppMean / 100) / 2 : wetShare;
+  const cloud = cc.length ? weightedMedian(cc) : null;
 
   let kind;
   if (precip >= WET_MM && wetShare >= 0.5) kind = temp <= 0.5 ? 'snow' : 'rain';
@@ -53,7 +72,9 @@ export function buildForecast(results, startMs, count = 24) {
   const hours = [];
   for (let i = 0; i < count; i++) {
     const ms = startMs + i * H;
-    const entries = ok.map((r) => r.hours.get(ms)).filter(Boolean);
+    const entries = ok
+      .filter((r) => r.hours.has(ms))
+      .map((r) => ({ ...r.hours.get(ms), w: r.weight ?? 1 }));
     const combined = combineHour(entries);
     if (combined) hours.push({ ms, ...combined });
   }

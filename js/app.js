@@ -64,7 +64,8 @@ function render(place, forecast, sources, loadedAt, stale) {
   const list = $('sources');
   list.replaceChildren();
   for (const s of sources) {
-    const item = el('li', `${s.ok ? '✓' : '✗'} ${s.label}${s.ok ? '' : ` – ${s.error}`}`);
+    const weight = s.weight ? ` · Gewicht ${s.weight}` : '';
+    const item = el('li', `${s.ok ? '✓' : '✗'} ${s.label}${s.ok ? weight : ` – ${s.error}`}`);
     item.className = s.ok ? 'ok' : 'fail';
     list.append(item);
   }
@@ -80,7 +81,7 @@ async function load(place) {
     const start = Math.floor(Date.now() / H) * H;
     const forecast = buildForecast(sources, start, 24);
     if (!forecast.hours.length) throw new Error('Keine Quelle hat Daten geliefert.');
-    const summary = sources.map(({ id, label, ok, error }) => ({ id, label, ok, error }));
+    const summary = sources.map(({ id, label, weight, ok, error }) => ({ id, label, weight, ok, error }));
     const loadedAt = Date.now();
     localStorage.setItem(STORE_KEY, JSON.stringify({ place, forecast, sources: summary, loadedAt }));
     setStatus('');
