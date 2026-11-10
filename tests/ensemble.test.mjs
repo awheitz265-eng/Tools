@@ -92,3 +92,16 @@ test('buildForecast reicht das Gewicht der Quelle durch', () => {
   const f = buildForecast([mk(1, 1), mk(2, 1), mk(8, 5)], 0, 1);
   assert.equal(f.hours[0].temp, 8);
 });
+
+import { visualState } from '../js/ensemble.js';
+
+test('Bild passt zur Wetterlage, auch wenn die Bewölkungszahl nicht dazu passt', () => {
+  assert.deepEqual(visualState({ kind: 'rain', cloud: 40, precip: 0.1 }), { cover: 0.96, rain: 0.3, snow: 0 });
+  assert.deepEqual(visualState({ kind: 'snow', cloud: 100, precip: 1.5 }), { cover: 1, rain: 0, snow: 1.5 });
+  assert.equal(visualState({ kind: 'cloudy', cloud: 70, precip: 0.05 }).cover, 0.84);
+  assert.equal(visualState({ kind: 'cloudy', cloud: null }).rain, 0);
+  assert.equal(visualState({ kind: 'partly', cloud: 69 }).cover, 0.6);
+  assert.equal(visualState({ kind: 'partly', cloud: null }).cover, 0.5);
+  assert.equal(visualState({ kind: 'clear', cloud: 29 }).cover, 0.1);
+  assert.equal(visualState({ kind: 'clear', cloud: 0 }).cover, 0);
+});

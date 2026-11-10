@@ -1,5 +1,5 @@
 // Animierte Wettersequenz: spielt die Vorhersage als kurzen «Film» auf einem Canvas ab.
-import { sunElevation } from './ensemble.js';
+import { sunElevation, visualState } from './ensemble.js';
 
 const DURATION = 28000; // ms für die ganze Sequenz
 const INTRO = 0.06; // Anteil Titelbild am Anfang
@@ -157,14 +157,19 @@ export class Scene {
     const b = hrs[Math.min(i + 1, hrs.length - 1)];
     const k = pos - i;
     const near = k < 0.5 ? a : b;
+    // Das Bild wechselt zügig um die Stundenmitte, gleichzeitig mit der Beschriftung
+    const e = clamp01((k - 0.3) / 0.4);
+    const ease = e * e * (3 - 2 * e);
+    const va = visualState(a);
+    const vb = visualState(b);
     return {
       ms: lerp(a.ms, b.ms, k),
       temp: lerp(a.temp, b.temp, k),
       precip: lerp(a.precip, b.precip, k),
       prob: lerp(a.prob, b.prob, k),
-      cloud: lerp(a.cloud ?? 50, b.cloud ?? 50, k),
-      rain: lerp(a.kind === 'rain' ? a.precip : 0, b.kind === 'rain' ? b.precip : 0, k),
-      snow: lerp(a.kind === 'snow' ? a.precip : 0, b.kind === 'snow' ? b.precip : 0, k),
+      cover: lerp(va.cover, vb.cover, ease),
+      rain: lerp(va.rain, vb.rain, ease),
+      snow: lerp(va.snow, vb.snow, ease),
       kind: near.kind,
       confLabel: near.confLabel,
       n: near.n,
@@ -190,14 +195,17 @@ export class Scene {
     const { place } = this.data;
     const elev = sunElevation(s.ms, place.lat, place.lon);
     const day = clamp01((elev + 6) / 12); // 0 = Nacht, 1 = Tag, dazwischen Dämmerung
-    const cover = clamp01(s.cloud / 100);
-    const wet = s.kind === 'rain' || s.kind === 'snow';
+    const cover = s.cover;
     const horizon = h * 0.62;
 
     // ---------- Licht und Stimmung ----------
     const dusk = clamp01(1 - Math.abs(elev) / 10); // Sonne nahe am Horizont
     const wetAmt = clamp01((s.rain + s.snow) / 2);
-    const gloom = clamp01(cover * 0.8 + wetAmt * 0.4); // wie trüb der Himmel ist
+    const falling = clamp01((s.rain + s.snow) / 0.3); // 1 = es regnet oder schneit
+    const gloom = clamp01(cover ** 1.5 * 1.2 + falling * 0.2); // wie trüb der Himmel ist
+    // Wie stark Sonne, Mond und Sterne durchkommen: ab dichter Decke gar nicht mehr
+    const c = clamp01((cover - 0.5) / 0.38);
+    const clearSky = (1 - c * c * (3 - 2 * c)) * (1 - falling);
     const clock = this.clock;
 
     // ---------- Himmel ----------
@@ -219,7 +227,7 @@ export class Scene {
     ctx.fillRect(0, 0, w, h);
 
     // Sterne
-    const starAlpha = (1 - day) * (1 - gloom);
+    const starAlpha = (1 - day) * clearSky * (1 - cover * 0.5);
     if (starAlpha > 0.05) {
       for (let i = 0; i < 110; i++) {
         const tw = 0.55 + 0.45 * Math.sin(clock / (400 + R[i + 30] * 600) + i);
@@ -232,7 +240,7 @@ export class Scene {
     }
 
     // Mond mit echter Phase
-    const moonAlpha = clamp01(1 - day / 0.6) * (1 - gloom * 0.9);
+    const moonAlpha = clamp01(1 - day / 0.6) * clearSky;
     if (moonAlpha > 0.03) {
       const x = w * 0.78;
       const y = horizon * 0.22;
@@ -261,11 +269,13 @@ export class Scene {
       const local = ((s.ms / 3600e3 + place.lon / 15) % 24 + 24) % 24; // wahre Ortszeit
       const x = w * (0.08 + 0.84 * clamp01((local - 5) / 14));
       const y = horizon - Math.min(elev / 60, 1) * horizon * 0.75;
-      const power = 1 - gloom * 0.85;
+      const power = clearSky * (1 - cover * 0.35);
       const tint = mix([255, 150, 70], [255, 244, 214], clamp01(elev / 14));
       const halo = ctx.createRadialGradient(x, y, 0, x, y, u * 46);
-      halo.addColorStop(0, rgb(tint, 0.85 * power + 0.1));
-      halo.addColorStop(0.12, rgb(tint, 0.42 * power + 0.05));
+      // hinter dichten Wolken bleibt nur ein schwacher heller Fleck, bei Niederschlag nichts
+      const diffuse = 0.1 * (1 - falling);
+      halo.addColorStop(0, rgb(tint, 0.85 * power + diffuse));
+      halo.addColorStop(0.12, rgb(tint, 0.42 * power + diffuse * 0.5));
       halo.addColorStop(0.45, rgb(tint, 0.12 * power));
       halo.addColorStop(1, rgb(tint, 0));
       ctx.fillStyle = halo;
@@ -321,20 +331,20 @@ export class Scene {
       }
       ctx.globalAlpha = 1;
     };
-    cloudLayer(Math.round(1 + cover * 9), 300, 0.5, 0.9, 0.36, 0.7, 0.0018, 0.9); // fern, klein, langsam
+    cloudLayer(Math.round(cover * 10), 300, 0.5, 0.9, 0.36, 0.7, 0.0018, 0.9); // fern, klein, langsam
     if (cover > 0.55) {
       // geschlossene Wolkendecke
       const veil = ctx.createLinearGradient(0, 0, 0, horizon);
-      const a = ((cover - 0.55) / 0.45) * 0.6;
+      const a = ((cover - 0.55) / 0.45) * (0.62 + falling * 0.25);
       veil.addColorStop(0, rgb(greyHi, a));
       veil.addColorStop(1, rgb(greyLo, a * 0.7));
       ctx.fillStyle = veil;
       ctx.fillRect(0, 0, w, horizon + u * 4);
     }
-    cloudLayer(Math.round(cover * 9), 350, 1.1, 1.9, 0.1, 0.44, 0.0045, 1); // nah, gross, schneller
+    cloudLayer(Math.round(cover * 10 + falling * 3), 350, 1.1, 1.9, 0.08, 0.46, 0.0045, 1); // nah, gross, schneller
 
     // ---------- Landschaft ----------
-    const snowGround = s.temp <= 0.5 ? clamp01(s.snow / 0.4) * 0.85 : 0;
+    const snowGround = clamp01(s.snow / 0.3) * 0.85;
     const ridgePath = (ridge, base, amp) => {
       ctx.beginPath();
       ctx.moveTo(0, h);
@@ -628,7 +638,7 @@ export class Scene {
     // Niederschlag
     const barW = Math.max(2, step * 0.55);
     hrs.forEach((x, i) => {
-      if (x.precip < 0.05) return;
+      if (x.kind !== 'rain' && x.kind !== 'snow') return;
       const bh = clamp01(x.precip / 4) * (y1 - y0) * 0.9 + u;
       ctx.fillStyle = `rgba(110,180,255,${0.35 + 0.5 * clamp01(x.prob)})`;
       ctx.fillRect(xs(i) - barW / 2, y1 - bh, barW, bh);

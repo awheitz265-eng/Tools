@@ -84,6 +84,27 @@ export function buildForecast(results, startMs, count = 24) {
   return { hours, utcOffset, sourceCount: ok.length };
 }
 
+// Was die Animation für eine Stunde zeigen soll. Das Bild folgt der Wetterlage (kind),
+// damit Text und Bild immer zusammenpassen: Regen und Schnee nur unter dichter
+// Wolkendecke, «Bewölkt» ohne Sonne, «Klar» ohne nennenswerte Wolken.
+//   cover = sichtbare Bewölkung 0..1, rain/snow = sichtbare Stärke in mm pro Stunde
+export function visualState(hour) {
+  const c = Math.max(0, Math.min(1, (hour.cloud ?? 50) / 100));
+  const strength = Math.max(hour.precip ?? 0, 0.3); // auch leichter Niederschlag bleibt sichtbar
+  switch (hour.kind) {
+    case 'rain':
+      return { cover: Math.max(c, 0.96), rain: strength, snow: 0 };
+    case 'snow':
+      return { cover: Math.max(c, 0.96), rain: 0, snow: strength };
+    case 'cloudy':
+      return { cover: Math.max(0.84, c), rain: 0, snow: 0 };
+    case 'partly':
+      return { cover: Math.max(0.3, Math.min(0.6, c)), rain: 0, snow: 0 };
+    default:
+      return { cover: Math.min(c, 0.1), rain: 0, snow: 0 };
+  }
+}
+
 // Sonnenhöhe in Grad (Näherung, für Tag/Nacht in der Animation).
 export function sunElevation(ms, lat, lon) {
   const rad = Math.PI / 180;
