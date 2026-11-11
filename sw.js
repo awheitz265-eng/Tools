@@ -1,5 +1,5 @@
 // Hält die App-Dateien für den Offline-Start bereit. Wetterdaten werden nie gecacht.
-const CACHE = 'wetter-v9';
+const CACHE = 'wetter-v10';
 const SHELL = ['./', 'index.html', 'style.css', 'manifest.webmanifest', 'js/app.js', 'js/sources.js', 'js/ensemble.js', 'js/scene.js', 'js/verify.js', 'icons/icon.svg', 'icons/icon-192.png'];
 
 self.addEventListener('install', (ev) => {
@@ -19,7 +19,9 @@ self.addEventListener('fetch', (ev) => {
   const url = new URL(ev.request.url);
   if (ev.request.method !== 'GET' || url.origin !== self.location.origin) return;
   ev.respondWith(
-    fetch(ev.request)
+    // 'no-cache' = beim Server nachfragen, ob die Datei neu ist. Sonst liefert der Browser
+    // bis zu zehn Minuten lang alte Dateien, und neue und alte Teile der App passen nicht zusammen.
+    fetch(ev.request.url, { cache: 'no-cache' })
       .then((res) => {
         if (res.ok) caches.open(CACHE).then((c) => c.put(ev.request, res.clone()));
         return res;

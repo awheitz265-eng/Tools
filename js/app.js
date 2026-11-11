@@ -8,6 +8,7 @@ const H = 3600e3;
 const STORE_KEY = 'wetter.letzterStand';
 const VERIFY_KEY = 'wetter.auswertung';
 const SPEED_KEY = 'wetter.tempo';
+const VERSION = '11.11.2026-2'; // steht unten auf der Seite, um den geladenen Stand zu erkennen
 const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const KIND = {
   clear: ['☀️', 'Klar'],
@@ -321,8 +322,12 @@ function setSpeed(value) {
   }
 }
 for (const btn of document.querySelectorAll('#speed button')) {
-  btn.addEventListener('click', () => setSpeed(Number(btn.dataset.speed)));
+  btn.addEventListener('click', () => {
+    setSpeed(Number(btn.dataset.speed));
+    scene.play(); // gleich abspielen, damit die Wirkung sichtbar ist
+  });
 }
+$('version').textContent = `Version ${VERSION}`;
 setSpeed([0.5, 1, 2, 4].includes(Number(localStorage.getItem(SPEED_KEY))) ? Number(localStorage.getItem(SPEED_KEY)) : 1);
 
 $('play').addEventListener('click', () => scene.toggle());
