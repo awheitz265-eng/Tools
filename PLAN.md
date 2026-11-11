@@ -13,6 +13,32 @@
 - Niederschlagsrisiko: Anteil der Quellen mit ≥ 0.1 mm, gemittelt mit deren eigenen Wahrscheinlichkeiten
 - Konfidenz (hoch/mittel/tief): Faustregel aus Temperaturspanne und Einigkeit beim Niederschlag; bei weniger als 3 Quellen immer «tief». Nicht kalibriert.
 
+## Stand der Prüfung gegen die Dokumentation (11.11.2026)
+Die öffentlichen Quellcode- und Dokumentations-Repos der Dienste wurden gelesen (Stand: Open-Meteo 10.11.2026, Bright Sky 20.10.2026, MeteoSchweiz 10.11.2026, MET Norway 7.3.2023). Die MET-Norway-Doku im Repo ist alt; die Angaben dazu können überholt sein. Damit geprüft:
+- Open-Meteo (Quellcode): Modellnamen, Variablennamen, Parameter, Zeitstempel in UTC, Feld `elevation`, Fehler 400 ausserhalb des Modellgebiets.
+- MET Norway (Doku): Feldnamen, Endpunkt `complete`, Abruf aus dem Browser für Seiten mit wenig Verkehr erlaubt, Modell ausserhalb Nordeuropas ist ECMWF (9 km), Lizenz CC BY 4.0.
+- Bright Sky (Quellcode): Feldnamen, Arten `historical`/`current`/`forecast`, Parameter `max_dist`.
+- MeteoSchweiz (Doku): Dateinamen, Spalten `tre200s0` und `rre150z0`, Zeitformat `dd.mm.yyyy HH:MM` in UTC, Zeitstempel = Ende des Intervalls, Datei `now` reicht von gestern 12 UTC bis jetzt.
+
+Nicht geprüft, weil die Dienste selbst aus der Entwicklungsumgebung nicht erreichbar sind:
+- ob data.geo.admin.ch den Abruf aus dem Browser zulässt (CORS). Falls nicht, zeigt die Statuszeile der Auswertung «MeteoSchweiz: nicht erreichbar» und es gilt die Modellanalyse.
+- welche Regionalmodelle für einen Ort tatsächlich Werte liefern und ob sie alle abgefragten Grössen haben.
+- ob MET Norway ausserhalb Nordeuropas Böen liefert.
+
+## Zusätzliche Quellen (11.11.2026)
+Sechs Regionalmodelle über Open-Meteo, je nur für einen Teil Europas: MeteoSchweiz ICON-CH, GeoSphere Austria AROME, ItaliaMeteo ICON-2I, CHMI ALADIN, KNMI HARMONIE, DMI HARMONIE. Abgefragt wird jeweils das Einzelmodell, nicht die «seamless»-Variante: Diese fällt ausserhalb des Gebiets auf ECMWF zurück und würde ECMWF mehrfach zählen.
+
+Ausgangsgewicht je 0.8 statt 1.0, weil sie zu Modellfamilien gehören, die schon vertreten sind. Das ist eine Setzung.
+
+Bewusst nicht eingebaut:
+- ECMWF AIFS (KI-Modell): nur 6-stündliche Werte, für stündliche Aussagen zu grob.
+- Weitere Globalmodelle (Kanada GEM, Japan JMA, China, Australien): grob aufgelöst, für Europa kein erkennbarer Gewinn.
+- Dienste mit Schlüssel (OpenWeatherMap, WeatherAPI, meteoblue u.a.): Ein Schlüssel im öffentlichen Repo wäre für alle sichtbar.
+- GeoSphere Austria direkt: Datensatz wurde 2026 umgestellt; über Open-Meteo ist dasselbe Modell verfügbar.
+
+## Hinweise auf markantes Wetter (11.11.2026)
+Hinweise der App, keine amtlichen Warnungen. Schwellen: Böen ab 50 km/h (Beaufort 7) als Hinweis, ab 62 (Beaufort 8) hervorgehoben, ab 75 «Sturmböen», ab 89 «Schwere Sturmböen»; Regen ab 5 mm pro Stunde, «Starkregen» ab 15; Frost ab 0 Grad; Hitze ab 30 Grad; dazu Gewitter, Schneefall, Nebel. Die Schwellen sind Setzungen.
+
 ## Wind, Gewitter, Nebel (Stand 10.11.2026)
 - Wind und Böen: gewichteter Median der Quellen mit Angabe, in km/h. MET Norway liefert keine Böen.
 - Gewitter: wird angezeigt, sobald Quellen mit zusammen mindestens 30 % des Gewichts eines melden. Die Schwelle ist bewusst tief, weil Gewitter örtlich und schwer vorherzusagen sind; sie ist eine Setzung, nicht gemessen.
@@ -36,13 +62,15 @@ Belegstand: Die Angaben stützen sich nur auf Auszüge aus Suchergebnissen (ECMW
 ## Eigene Auswertung der Trefferquote (Stand 10.11.2026)
 - Bei jedem Laden merkt sich die App die Vorhersage jeder Quelle für die kommenden 24 Stunden (pro Ort, nur auf dem Gerät). Bewertet wird die früheste gemerkte Vorhersage einer Stunde.
 - Beim nächsten Laden desselben Orts werden vergangene Stunden mit dem eingetretenen Wetter verglichen: mittlerer Temperaturfehler, Tendenz (zu warm/zu kalt), Trefferquote nass/trocken (Schwelle 0.1 mm).
-- Vergleichsdaten: zuerst DWD-Stationsmessungen via Bright Sky; wenn keine Station in Reichweite ist, die Modellanalyse von Open-Meteo.
+- Vergleichsdaten: Stationsmessung, wenn eine Station höchstens 12 km entfernt und höchstens 150 m höher oder tiefer liegt (Schweiz: MeteoSchweiz SwissMetNet, Zehnminutenwerte; Deutschland: DWD via Bright Sky). Für Stunden ohne Messung die Modellanalyse von Open-Meteo. Die App zählt mit, wie viele Vergleiche auf Messungen beruhen.
+- Bei jedem Laden werden auch bis zu drei andere gemerkte Orte ausgewertet.
 - Gewichte: ab 24 ausgewerteten Stunden fliesst die Auswertung ein, ab 168 Stunden zählt nur noch sie. Temperatur: Kehrwert des quadrierten mittleren Fehlers. Niederschlag: Kehrwert der Fehlerquote nass/trocken. Begrenzt auf 0.3 bis 2.5.
 - Vorhersagen ohne Vergleichsdaten verfallen nach 72 Stunden. Die App muss also mindestens alle zwei bis drei Tage geöffnet werden.
 
 Grenzen:
 - Die Modellanalyse ist keine Messung. Sie stammt selbst aus einem Wettermodell und kann verwandte Quellen bevorzugen.
-- Welche Vergleichsdaten Bright Sky ausserhalb Deutschlands liefert, ist ungeprüft; die App zeigt an, welche Art zuletzt verwendet wurde.
+- Die Messdatei von MeteoSchweiz reicht nur bis gestern 12 UTC zurück. Ältere Stunden werden mit der Modellanalyse verglichen.
+- Ausserhalb der Schweiz und Deutschlands gibt es keine Stationsmessungen; dort gilt nur die Modellanalyse.
 - Die Auswertung fasst alle Orte zusammen und unterscheidet nicht nach Vorlaufzeit.
 - Die Abhängigkeit zwischen ECMWF und MET Norway wird durch gelernte Gewichte nicht mehr berücksichtigt.
 
@@ -53,7 +81,8 @@ Grenzen:
 4. [x] Gewichtung der Quellen, detailliertere Animation (Titelbild, Zusammenfassung, Landschaft, Zeitleiste)
 5. [x] Eigene Auswertung der Trefferquote mit lernenden Gewichten
 6. [x] Wind und Böen, Gewitter, Nebel, 48 Stunden
-7. [ ] Weiterer Feinschliff nach Rückmeldung (z.B. Favoriten)
+7. [x] Tagesübersicht, Hinweise, Abspieltempo, sechs Regionalmodelle, Stationsmessungen für die Auswertung, Dorf und hellere Nacht in der Animation
+8. [ ] Weiterer Feinschliff nach Rückmeldung (z.B. Favoriten)
 
 ## Offene Punkte
 - Die echten Schnittstellen konnten in der Entwicklungsumgebung nicht aufgerufen werden (Netzwerk gesperrt). Getestet ist nur mit nachgebildeten Antworten. Adressen, Parameter und Modellnamen stammen aus dem Gedächtnis und sind nicht gegen die Dokumentation geprüft.

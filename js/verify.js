@@ -8,7 +8,7 @@ const KEEP_MS = 72 * H; // so lange wartet eine Vorhersage auf Vergleichsdaten
 export const MIN_HOURS = 24; // ab so vielen Stunden fliesst die eigene Auswertung ein
 export const FULL_HOURS = 168; // ab hier zählt nur noch die eigene Auswertung
 
-export const emptyStore = () => ({ version: 1, pending: {}, stats: {}, truth: null });
+export const emptyStore = () => ({ version: 1, pending: {}, stats: {}, truth: null, places: {}, counts: { obs: 0, analysis: 0 } });
 export const placeKey = (lat, lon) => `${lat.toFixed(2)},${lon.toFixed(2)}`;
 
 // Schlüssel für einen Ort. Liegt schon ein gemerkter Ort in der Nähe (rund 3 km), wird
@@ -29,8 +29,10 @@ export function pendingCount(store) {
 
 // Vorhersagen für die kommenden 24 Stunden merken. Eine bereits gemerkte Vorhersage
 // wird nicht überschrieben: bewertet wird die früheste, nicht die kurz vor Eintritt.
-export function recordForecasts(store, key, results, nowMs) {
+export function recordForecasts(store, key, results, nowMs, info = null) {
   const place = (store.pending[key] ??= {});
+  // Koordinaten und Höhe merken, damit der Ort auch später noch ausgewertet werden kann
+  if (info) (store.places ??= {})[key] = info;
   for (const r of results) {
     if (!r.ok) continue;
     for (const [ms, v] of r.hours) {
@@ -63,6 +65,9 @@ export function evaluate(store, key, truth, nowMs) {
     }
     delete place[msText];
     done += 1;
+    // mitzählen, ob gegen eine Messung oder gegen die Modellanalyse verglichen wurde
+    const counts = (store.counts ??= { obs: 0, analysis: 0 });
+    counts[actual.src === 'obs' ? 'obs' : 'analysis'] += 1;
   }
   return done;
 }
@@ -71,7 +76,10 @@ export function evaluate(store, key, truth, nowMs) {
 export function prune(store, nowMs) {
   for (const [key, place] of Object.entries(store.pending)) {
     for (const msText of Object.keys(place)) if (Number(msText) < nowMs - KEEP_MS) delete place[msText];
-    if (!Object.keys(place).length) delete store.pending[key];
+    if (!Object.keys(place).length) {
+      delete store.pending[key];
+      if (store.places) delete store.places[key];
+    }
   }
 }
 

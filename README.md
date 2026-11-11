@@ -5,8 +5,9 @@
 Private Wetter-App (PWA) für Android-Handy und iPad. Sie liest mehrere kostenlose Wetterquellen, bildet daraus die wahrscheinlichste Vorhersage für die nächsten 48 Stunden (stündlich: Temperatur, Niederschlag, Wind und Böen, Gewitter, Nebel) und zeigt sie als kurze animierte Sequenz. Ort: aktueller Standort oder Ortssuche.
 
 - Kein Build-Schritt, kein Server, keine API-Schlüssel: reine statische Dateien.
-- Quellen: Open-Meteo (Modelle von DWD, ECMWF, Météo-France, UK Met Office, NOAA), MET Norway, DWD MOSMIX via Bright Sky. Fällt eine Quelle aus, rechnet die App mit den übrigen; der Abschnitt «Quellen und Methode» in der App zeigt den Status jeder Quelle.
-- Auswertung: Die App merkt sich die Vorhersage jeder Quelle, vergleicht sie beim nächsten Öffnen mit dem eingetretenen Wetter und passt die Gewichte der Quellen daran an. Die Daten bleiben auf dem Gerät.
+- Quellen: Open-Meteo (Modelle von DWD, ECMWF, Météo-France, UK Met Office, NOAA sowie die Regionalmodelle von MeteoSchweiz, GeoSphere Austria, ItaliaMeteo, CHMI, KNMI und DMI), MET Norway, DWD MOSMIX via Bright Sky.
+- Tagesübersicht, Hinweise auf markantes Wetter (keine amtlichen Warnungen), wählbares Abspieltempo. Fällt eine Quelle aus, rechnet die App mit den übrigen; der Abschnitt «Quellen und Methode» in der App zeigt den Status jeder Quelle.
+- Auswertung: Die App merkt sich die Vorhersage jeder Quelle, vergleicht sie beim nächsten Öffnen mit dem eingetretenen Wetter (wenn möglich Stationsmessungen von MeteoSchweiz oder DWD, sonst Modellanalyse) und passt die Gewichte der Quellen daran an. Die Daten bleiben auf dem Gerät.
 - Nur für private, nichtkommerzielle Nutzung (Bedingung der Gratis-Tarife).
 
 ### Lokal starten

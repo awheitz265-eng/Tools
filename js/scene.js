@@ -75,6 +75,286 @@ function makeCloudSprite(seed) {
   return c;
 }
 
+
+// ---------------------------------------------------------------------------------
+// Statische Landschaft: bewaldeter Höhenzug, Wiese, Dorf. Gibt die Lage der Kamine
+// zurück (für den Rauch). L = Lichtverhältnisse, siehe Aufruf.
+// ---------------------------------------------------------------------------------
+const HOUSES = [
+  // x-Anteil, Tiefe (0 hinten .. 1 vorn), Breite, Höhe, Dach, Wand, Fenster
+  [0.47, 0.12, 3.4, 2.5, 0, 0, 2], [0.515, 0.42, 4.2, 3.0, 1, 1, 3], [0.555, 0.06, 3.0, 2.3, 2, 2, 2],
+  [0.59, 0.66, 4.8, 3.3, 0, 3, 3], [0.615, 0.26, 3.6, 2.7, 1, 0, 2], [0.725, 0.1, 3.2, 2.4, 0, 1, 2],
+  [0.745, 0.5, 4.2, 3.0, 2, 0, 3], [0.79, 0.24, 3.6, 2.7, 1, 3, 2], [0.815, 0.78, 5.0, 3.4, 0, 1, 4],
+  [0.86, 0.38, 3.9, 2.9, 2, 2, 3], [0.905, 0.62, 4.4, 3.1, 1, 0, 3], [0.69, 0.92, 5.2, 3.5, 2, 1, 4],
+  [0.54, 0.95, 4.6, 3.2, 0, 2, 3],
+];
+const CHURCH = [0.665, 0.34];
+const TREES = [[0.49, 0.3], [0.57, 0.5], [0.635, 0.55], [0.705, 0.3], [0.765, 0.7], [0.835, 0.2], [0.88, 0.85], [0.93, 0.3], [0.61, 0.98], [0.76, 0.98]];
+const ROOFS = [[152, 76, 58], [96, 88, 90], [124, 90, 66]];
+const WALLS = [[238, 230, 214], [246, 242, 234], [216, 198, 172], [156, 116, 86]];
+
+function paintGround(g, w, h, u, horizon, ridges, L) {
+  const ridgeY = (ridge, base, amp, x) => {
+    const pos = clamp01(x / w) * (ridge.length - 1);
+    const i = Math.min(Math.floor(pos), ridge.length - 2);
+    return base - amp * lerp(ridge[i], ridge[i + 1], pos - i);
+  };
+  const ridgePath = (ridge, base, amp) => {
+    g.beginPath();
+    g.moveTo(0, h);
+    ridge.forEach((v, i) => g.lineTo((w * i) / (ridge.length - 1), base - amp * v));
+    g.lineTo(w, h);
+    g.closePath();
+  };
+  const tri = (x1, y1, x2, y2, x3, y3) => {
+    g.beginPath();
+    g.moveTo(x1, y1);
+    g.lineTo(x2, y2);
+    g.lineTo(x3, y3);
+    g.fill();
+  };
+  const SNOW = [232, 238, 246];
+  // Farbe bei diesem Licht: nachts dunkler und bläulich (Mondlicht), bei trübem Wetter grauer
+  const lit = (c) => {
+    const night = mix(mix(c, [40, 56, 96], 0.55), [0, 0, 0], 0.3);
+    const grey = (c[0] + c[1] + c[2]) / 3;
+    return mix(mix(night, c, L.day), [grey, grey, grey], L.gloom * 0.25);
+  };
+  const snowy = (c, amount = 1) => mix(c, lit(SNOW), L.snow * amount);
+
+  const conifer = (x, base, ht, tiers, body, shade, trunk) => {
+    const half = ht * 0.3;
+    if (trunk) {
+      g.fillStyle = trunk;
+      g.fillRect(x - ht * 0.03, base - ht * 0.14, ht * 0.06, ht * 0.14);
+    }
+    for (let t = tiers - 1; t >= 0; t--) {
+      const top = base - ht + (ht * 0.78 * t) / tiers;
+      const bot = Math.min(base - ht * 0.06, top + ((ht * 0.78) / tiers) * 1.75);
+      const hw = half * (0.35 + (0.65 * (t + 1)) / tiers);
+      g.fillStyle = body;
+      tri(x, top, x + hw, bot, x - hw, bot);
+      g.fillStyle = shade; // Schattenseite
+      tri(x, top, x, bot, x - hw, bot);
+      if (L.snow > 0.1) {
+        g.fillStyle = rgb(lit(SNOW), L.snow * 0.9);
+        tri(x, top, x + hw * 0.55, top + (bot - top) * 0.5, x - hw * 0.55, top + (bot - top) * 0.5);
+      }
+    }
+  };
+
+  // ---- bewaldeter Höhenzug ----
+  const midBase = horizon + u * 4;
+  const midAmp = u * 8;
+  const nearBase = horizon + u * 9;
+  const nearAmp = u * 3;
+  let forest = lit([44, 82, 66]);
+  forest = mix(forest, L.low, 0.14 + L.wet * 0.2);
+  const forestBody = rgb(snowy(forest, 0.35));
+  const forestShade = rgb(mix(snowy(forest, 0.2), [0, 0, 0], 0.3));
+  const trunk = rgb(lit([70, 52, 40]));
+  for (let i = 0; i < 130; i++) {
+    // Baumreihe auf der Kante
+    const x = (w * (i + R[i + 420])) / 130;
+    const y = ridgeY(ridges[1], midBase, midAmp, x) + u * 0.5;
+    conifer(x, y, u * (1.8 + R[i + 440] * 2.4), 2, forestBody, forestShade);
+  }
+  ridgePath(ridges[1], midBase, midAmp);
+  const slope = g.createLinearGradient(0, midBase - midAmp, 0, nearBase);
+  slope.addColorStop(0, forestBody);
+  slope.addColorStop(1, forestShade);
+  g.fillStyle = slope;
+  g.fill();
+  // Bäume am Hang, nach unten hin grösser (näher); rechts lichter, dort liegt das Dorf
+  const stand = [];
+  for (let i = 0; i < 230; i++) {
+    const x = R[(i * 3) % 600] * w;
+    const top = ridgeY(ridges[1], midBase, midAmp, x);
+    const bottom = ridgeY(ridges[2], nearBase, nearAmp, x) + u * 0.6;
+    if (bottom - top < u * 1.5) continue;
+    const depth = R[(i * 3 + 1) % 600];
+    if (x > w * 0.44 && depth > 0.55 && R[(i * 3 + 2) % 600] < 0.8) continue;
+    stand.push([x, top + (0.12 + 0.88 * depth) * (bottom - top), u * (2.2 + depth * 3 + R[(i * 3 + 2) % 600] * 1.4)]);
+  }
+  stand.sort((a, b) => a[1] - b[1]);
+  for (const [x, y, ht] of stand) conifer(x, y, ht, 3, forestBody, forestShade, trunk);
+
+  // ---- Wiese ----
+  let grassTop = snowy(lit([100, 146, 88]));
+  let grassLow = snowy(lit([56, 98, 62]), 0.9);
+  ridgePath(ridges[2], nearBase, nearAmp);
+  const meadow = g.createLinearGradient(0, nearBase - nearAmp, 0, h);
+  meadow.addColorStop(0, rgb(grassTop));
+  meadow.addColorStop(1, rgb(grassLow));
+  g.fillStyle = meadow;
+  g.fill();
+  g.save();
+  g.clip();
+  // Felder und Wiesenstücke
+  for (let i = 0; i < 9; i++) {
+    const x = R[i + 500] * w;
+    const y = ridgeY(ridges[2], nearBase, nearAmp, x) + u * (2 + R[i + 510] * 16);
+    g.fillStyle = rgb(i % 2 ? [255, 255, 220] : [0, 20, 0], 0.07);
+    g.beginPath();
+    g.ellipse(x, y, u * (9 + R[i + 520] * 12), u * (1.2 + R[i + 530] * 1.6), -0.08, 0, Math.PI * 2);
+    g.fill();
+  }
+  if (L.sheen > 0) {
+    g.fillStyle = rgb(L.low, 0.08 + L.sheen * 0.12); // nasser Boden spiegelt den Himmel
+    g.fillRect(0, 0, w, h);
+  }
+  // Strasse vom Dorf nach vorn
+  const road = rgb(snowy(lit([190, 180, 158]), 0.8));
+  for (let k = 0; k < 70; k++) {
+    const f = k / 70;
+    const x = w * (0.66 - f * f * 0.5 + Math.sin(f * 5) * 0.03);
+    const y = ridgeY(ridges[2], nearBase, nearAmp, w * 0.66) + u * (3 + f * 24);
+    g.fillStyle = road;
+    g.beginPath();
+    g.ellipse(x, y, u * (1.2 + f * 3.4), u * (0.5 + f * 0.9), -0.5, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.restore();
+
+  // ---- Dorf ----
+  const vu = u * Math.min(1.4, Math.max(1, w / (u * 100))); // auf breiten Bildschirmen grösser
+  const lights = clamp01(1 - L.day / 0.45); // wie stark die Fenster leuchten
+  const ground = (fx, depth) => ridgeY(ridges[2], nearBase, nearAmp, w * fx) + u * (1.2 + depth * 9.5);
+  const chimneys = [];
+  const items = [];
+
+  HOUSES.forEach(([fx, depth, bw, bh, roof, wall, wins], n) => {
+    items.push([depth, () => {
+      const k = vu * (0.78 + depth * 0.42);
+      const x = w * fx;
+      const y = ground(fx, depth);
+      const ww = bw * k;
+      const wh = bh * k;
+      const rh = ww * 0.42;
+      const wallC = lit(WALLS[wall]);
+      const roofC = snowy(lit(ROOFS[roof]), 0.95);
+      // Kamin (hinter dem Dach)
+      const cx = x + ww * 0.24;
+      g.fillStyle = rgb(mix(wallC, [0, 0, 0], 0.35));
+      g.fillRect(cx - k * 0.28, y - wh - rh * 0.95, k * 0.56, rh * 0.8);
+      if (n % 3 !== 2) chimneys.push([cx, y - wh - rh * 0.95]);
+      // Wand mit Schattenseite
+      g.fillStyle = rgb(wallC);
+      g.fillRect(x - ww / 2, y - wh, ww, wh);
+      g.fillStyle = rgb([0, 0, 0], 0.16);
+      g.fillRect(x - ww / 2, y - wh, ww * 0.22, wh);
+      // Giebeldach mit Überstand
+      g.fillStyle = rgb(roofC);
+      tri(x - ww * 0.6, y - wh + k * 0.1, x, y - wh - rh, x + ww * 0.6, y - wh + k * 0.1);
+      g.fillStyle = rgb([0, 0, 0], 0.18);
+      tri(x - ww * 0.6, y - wh + k * 0.1, x, y - wh - rh, x, y - wh + k * 0.1);
+      // Tür
+      g.fillStyle = rgb(lit([92, 62, 44]));
+      g.fillRect(x - ww * 0.42, y - wh * 0.5, ww * 0.14, wh * 0.5);
+      // Fenster, nachts teils erleuchtet
+      const fw = ww * 0.11;
+      const fh = wh * 0.3;
+      for (let i = 0; i < wins; i++) {
+        const fxw = x - ww * 0.2 + (i * ww * 0.62) / Math.max(1, wins - 1) - fw / 2;
+        const fy = y - wh * 0.72;
+        const on = lights > 0 && R[(n * 17 + i * 5) % 600] < 0.72;
+        if (on) {
+          const glow = g.createRadialGradient(fxw + fw / 2, fy + fh / 2, 0, fxw + fw / 2, fy + fh / 2, k * 2.2);
+          glow.addColorStop(0, `rgba(255,200,120,${0.4 * lights})`);
+          glow.addColorStop(1, 'rgba(255,200,120,0)');
+          g.fillStyle = glow;
+          g.fillRect(fxw - k * 2.2, fy - k * 2.2, fw + k * 4.4, fh + k * 4.4);
+        }
+        g.fillStyle = on ? `rgba(255,218,140,${0.55 + lights * 0.45})` : rgb(lit([86, 108, 132]));
+        g.fillRect(fxw, fy, fw, fh);
+      }
+    }]);
+  });
+
+  // Kirche mit Turm
+  items.push([CHURCH[1], () => {
+    const k = vu * 0.95;
+    const x = w * CHURCH[0];
+    const y = ground(CHURCH[0], CHURCH[1]);
+    const wallC = lit([244, 240, 232]);
+    const roofC = snowy(lit([88, 82, 86]), 0.95);
+    // Schiff
+    g.fillStyle = rgb(wallC);
+    g.fillRect(x, y - k * 3.6, k * 7, k * 3.6);
+    g.fillStyle = rgb(roofC);
+    tri(x - k * 0.3, y - k * 3.5, x + k * 3.5, y - k * 6, x + k * 7.3, y - k * 3.5);
+    // Turm
+    g.fillStyle = rgb(wallC);
+    g.fillRect(x - k * 1.3, y - k * 9, k * 2.6, k * 9);
+    g.fillStyle = rgb([0, 0, 0], 0.15);
+    g.fillRect(x - k * 1.3, y - k * 9, k * 0.6, k * 9);
+    g.fillStyle = rgb(roofC);
+    tri(x - k * 1.6, y - k * 9, x, y - k * 14, x + k * 1.6, y - k * 9);
+    g.fillRect(x - k * 0.08, y - k * 15, k * 0.16, k * 1.2);
+    g.fillRect(x - k * 0.4, y - k * 14.6, k * 0.8, k * 0.16);
+    // Turmuhr, Schallfenster, Kirchenfenster
+    g.fillStyle = rgb(lit([228, 206, 150]));
+    g.beginPath();
+    g.arc(x, y - k * 7.6, k * 0.6, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = rgb(lit([60, 66, 80]));
+    g.fillRect(x - k * 0.4, y - k * 6.4, k * 0.8, k * 1.1);
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle = lights > 0 ? `rgba(255,214,140,${0.45 + lights * 0.4})` : rgb(lit([86, 108, 132]));
+      g.fillRect(x + k * (1.9 + i * 1.6), y - k * 2.7, k * 0.6, k * 1.5);
+    }
+  }]);
+
+  // Laubbäume zwischen den Häusern, je nach Jahreszeit
+  const leaf = { spring: [126, 172, 84], summer: [78, 128, 66], autumn: [186, 128, 56], winter: null }[L.season];
+  TREES.forEach(([fx, depth], n) => {
+    items.push([depth + 0.01, () => {
+      const k = vu * (0.75 + depth * 0.45);
+      const x = w * fx;
+      const y = ground(fx, depth);
+      g.strokeStyle = rgb(lit([74, 54, 40]));
+      g.lineWidth = Math.max(1, k * 0.32);
+      g.lineCap = 'round';
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x, y - k * 2.2);
+      if (!leaf) {
+        // kahle Krone im Winter
+        for (let b = 0; b < 5; b++) {
+          const a = -Math.PI / 2 + (b - 2) * 0.42;
+          g.moveTo(x, y - k * (1.4 + (b % 2) * 0.5));
+          g.lineTo(x + Math.cos(a) * k * 1.7, y - k * 1.8 + Math.sin(a) * k * 1.7);
+        }
+      }
+      g.stroke();
+      if (leaf) {
+        const crown = snowy(lit(leaf), 0.6);
+        [[0, -3.1, 1.5], [-1, -2.5, 1.2], [1, -2.5, 1.2], [0, -2.1, 1.3]].forEach(([dx, dy, r], i) => {
+          g.fillStyle = rgb(i === 1 ? mix(crown, [0, 0, 0], 0.22) : crown);
+          g.beginPath();
+          g.arc(x + dx * k + (R[n + 590] - 0.5) * k * 0.3, y + dy * k, r * k, 0, Math.PI * 2);
+          g.fill();
+        });
+      } else if (L.snow > 0.1) {
+        g.fillStyle = rgb(lit(SNOW), L.snow * 0.8);
+        g.beginPath();
+        g.ellipse(x, y - k * 2.6, k * 1.2, k * 0.35, 0, 0, Math.PI * 2);
+        g.fill();
+      }
+    }]);
+  });
+
+  items.sort((a, b) => a[0] - b[0]);
+  for (const [, paint] of items) paint();
+
+  // ---- grosse Tannen am Bildrand als Rahmen ----
+  [[0.035, 13, 17], [0.1, 15.5, 13], [-0.01, 18, 21], [0.975, 14, 16], [1.02, 18.5, 20]].forEach(([fx, dy, ht]) => {
+    conifer(w * fx, horizon + u * dy, u * ht, 6, forestBody, forestShade, trunk);
+  });
+
+  return { chimneys };
+}
+
 export class Scene {
   constructor(canvas, onProgress) {
     this.canvas = canvas;
@@ -86,6 +366,8 @@ export class Scene {
     this.last = 0;
     this.clock = 0;
     this.drift = 0;
+    this.speed = 1; // Abspieltempo (0.5 bis 4)
+    this.groundKey = '';
     this.tick = this.tick.bind(this);
     this.ridges = [
       makeRidge(500, [[1.3, 1], [3.1, 0.55], [7.3, 0.28], [15, 0.12]], 0.16), // ferne Alpenkette
@@ -145,8 +427,8 @@ export class Scene {
     this.clock += dt;
     // Wolken und Nebel ziehen mit dem Wind: eigener Zähler, damit nichts springt
     const windNow = this.stateAt(clamp01((this.progress - INTRO) / (OUTRO - INTRO))).wind;
-    this.drift += dt * (0.5 + windNow / 18);
-    this.progress += dt / (this.data.hours.length * MS_PER_HOUR + 6000);
+    this.drift += dt * this.speed * (0.5 + windNow / 18);
+    this.progress += (dt * this.speed) / (this.data.hours.length * MS_PER_HOUR + 6000);
     if (this.progress >= 1) {
       this.progress = 1;
       this.playing = false;
@@ -210,7 +492,8 @@ export class Scene {
     const elev = sunElevation(s.ms, place.lat, place.lon);
     const day = clamp01((elev + 6) / 12); // 0 = Nacht, 1 = Tag, dazwischen Dämmerung
     const cover = s.cover;
-    const horizon = h * 0.62;
+    // Horizont so, dass zwischen ihm und der Zeitleiste Platz für Wald und Dorf bleibt
+    const horizon = Math.max(h * 0.45, h - u * 62);
 
     // ---------- Licht und Stimmung ----------
     const dusk = clamp01(1 - Math.abs(elev) / 10); // Sonne nahe am Horizont
@@ -224,13 +507,13 @@ export class Scene {
     const clock = this.clock;
 
     // ---------- Himmel ----------
-    let zenith = mix([6, 10, 28], [38, 104, 190], day);
-    let middle = mix([14, 20, 46], [112, 170, 226], day);
-    let low = mix([26, 34, 64], [190, 218, 240], day);
+    let zenith = mix([14, 22, 52], [38, 104, 190], day);
+    let middle = mix([24, 36, 76], [112, 170, 226], day);
+    let low = mix([44, 60, 106], [190, 218, 240], day);
     low = mix(low, [250, 166, 98], dusk * 0.75);
     middle = mix(middle, [212, 142, 132], dusk * 0.35);
-    const greyHi = mix([28, 32, 42], [108, 118, 132], day);
-    const greyLo = mix([42, 46, 56], [178, 186, 196], day);
+    const greyHi = mix([44, 50, 66], [108, 118, 132], day);
+    const greyLo = mix([66, 74, 94], [178, 186, 196], day);
     zenith = mix(zenith, greyHi, gloom);
     middle = mix(middle, mix(greyHi, greyLo, 0.5), gloom);
     low = mix(low, greyLo, gloom * 0.9);
@@ -311,11 +594,11 @@ export class Scene {
     // Eingefärbte Wolkenbilder nur neu berechnen, wenn sich das Licht merklich ändert
     const tintKey = `${Math.round(day * 12)}|${Math.round(gloom * 8)}|${Math.round(dusk * 4)}`;
     if (this.cloudTint.key !== tintKey) {
-      let lit = mix([74, 82, 104], [255, 255, 255], day);
+      let lit = mix([112, 122, 152], [255, 255, 255], day);
       lit = mix(lit, [255, 208, 170], dusk * 0.6);
-      lit = mix(lit, mix([52, 58, 72], [150, 156, 166], day), gloom * 0.85);
-      let shade = mix([26, 30, 44], [150, 166, 190], day);
-      shade = mix(shade, mix([18, 21, 30], [72, 78, 90], day), gloom);
+      lit = mix(lit, mix([84, 92, 112], [150, 156, 166], day), gloom * 0.85);
+      let shade = mix([52, 60, 84], [150, 166, 190], day);
+      shade = mix(shade, mix([40, 46, 62], [72, 78, 90], day), gloom);
       this.cloudTint = {
         key: tintKey,
         sprites: this.cloudShapes.map((shape) => {
@@ -408,14 +691,14 @@ export class Scene {
     // ferne Alpenkette, vom Dunst aufgehellt, mit Schnee auf den Gipfeln
     const farBase = horizon + u * 2;
     const farAmp = u * 21;
-    const rock = mix(mix([16, 22, 40], [78, 100, 132], day), low, 0.45 + gloom * 0.3);
+    const rock = mix(mix([44, 56, 88], [78, 100, 132], day), low, 0.45 + gloom * 0.3);
     ridgePath(this.ridges[0], farBase, farAmp);
     ctx.fillStyle = rgb(rock);
     ctx.fill();
     ctx.save();
     ctx.clip();
     const caps = ctx.createLinearGradient(0, farBase - farAmp, 0, farBase - farAmp * 0.45);
-    const capColor = mix(mix([120, 130, 160], [250, 252, 255], day), [255, 214, 190], dusk * 0.5);
+    const capColor = mix(mix([152, 164, 198], [250, 252, 255], day), [255, 214, 190], dusk * 0.5);
     caps.addColorStop(0, rgb(capColor, 0.85 * (1 - gloom * 0.5)));
     caps.addColorStop(1, rgb(capColor, 0));
     ctx.fillStyle = caps;
@@ -429,71 +712,46 @@ export class Scene {
     ctx.fillStyle = haze;
     ctx.fillRect(0, horizon - u * 22, w, u * 28);
 
-    // bewaldeter Höhenzug
-    const midBase = horizon + u * 5;
-    const midAmp = u * 9;
-    let forest = mix([9, 15, 24], [38, 68, 62], day);
-    forest = mix(forest, low, 0.18 + wetAmt * 0.2);
-    forest = mix(forest, [226, 234, 242], snowGround * 0.5);
-    ctx.fillStyle = rgb(forest);
-    for (let i = 0; i < 90; i++) {
-      // Tannenspitzen entlang der Kante
-      const x = (w * (i + R[i + 420])) / 90;
-      const y = ridgeY(this.ridges[1], midBase, midAmp, x) + u * 0.4;
-      const th = u * (1.6 + R[i + 440] * 2);
-      ctx.beginPath();
-      ctx.moveTo(x, y - th);
-      ctx.lineTo(x + th * 0.3, y);
-      ctx.lineTo(x - th * 0.3, y);
-      ctx.fill();
+    // Wald, Wiese und Dorf: aufwendig zu zeichnen, darum nur neu, wenn sich Licht,
+    // Schnee, Nässe, Jahreszeit oder die Grösse merklich ändern
+    const nearBase = horizon + u * 9;
+    const month = new Date(s.ms).getUTCMonth();
+    const season = month <= 1 || month === 11 ? 'winter' : month <= 4 ? 'spring' : month <= 7 ? 'summer' : 'autumn';
+    const light = {
+      day: Math.round(day * 20) / 20,
+      gloom: Math.round(gloom * 6) / 6,
+      dusk: Math.round(dusk * 5) / 5,
+      snow: Math.round(snowGround * 5) / 5,
+      wet: Math.round(wetAmt * 3) / 3,
+      sheen: Math.round(clamp01(s.rain / 3) * 3) / 3,
+      season,
+    };
+    const groundKey = `${w}x${h}|${Object.values(light).join('|')}`;
+    if (this.groundKey !== groundKey) {
+      this.groundKey = groundKey;
+      this.ground ??= document.createElement('canvas');
+      this.ground.width = w;
+      this.ground.height = h;
+      this.village = paintGround(this.ground.getContext('2d'), w, h, u, horizon, this.ridges, { ...light, low });
     }
-    ridgePath(this.ridges[1], midBase, midAmp);
-    ctx.fill();
+    ctx.drawImage(this.ground, 0, 0);
 
-    // Wiese im Vordergrund
-    const nearBase = horizon + u * 11;
-    const nearAmp = u * 3.5;
-    let grassTop = mix([10, 16, 22], [92, 136, 84], day);
-    let grassLow = mix([6, 10, 14], [48, 86, 56], day);
-    grassTop = mix(mix(grassTop, [96, 104, 100], gloom * 0.35 * day), [232, 238, 246], snowGround);
-    grassLow = mix(grassLow, [190, 202, 216], snowGround);
-    ridgePath(this.ridges[2], nearBase, nearAmp);
-    const meadow = ctx.createLinearGradient(0, nearBase - nearAmp, 0, h);
-    meadow.addColorStop(0, rgb(grassTop));
-    meadow.addColorStop(1, rgb(grassLow));
-    ctx.fillStyle = meadow;
-    ctx.fill();
-    if (s.rain > 0.05) {
-      // nasser Boden spiegelt den Himmel leicht
-      ctx.fillStyle = rgb(low, 0.1 + clamp01(s.rain / 3) * 0.12);
-      ctx.fill();
-    }
-
-    // Haus mit Fensterlicht
-    {
-      const x = w * 0.7;
-      const y = ridgeY(this.ridges[2], nearBase, nearAmp, x) + u * 0.5;
-      const hw = u * 3.4;
-      const hh = u * 2.9;
-      ctx.fillStyle = rgb(mix([24, 28, 40], [226, 218, 204], day));
-      ctx.fillRect(x - hw, y - hh, hw * 2, hh);
-      ctx.fillStyle = rgb(mix(mix([14, 17, 26], [112, 64, 54], day), [236, 240, 246], snowGround));
-      ctx.beginPath();
-      ctx.moveTo(x - hw * 1.2, y - hh);
-      ctx.lineTo(x, y - hh - u * 2.5);
-      ctx.lineTo(x + hw * 1.2, y - hh);
-      ctx.fill();
-      const lit = clamp01(1 - day / 0.5);
-      if (lit > 0) {
-        const glow = ctx.createRadialGradient(x, y - hh * 0.5, 0, x, y - hh * 0.5, u * 9);
-        glow.addColorStop(0, `rgba(255,196,110,${0.3 * lit})`);
-        glow.addColorStop(1, 'rgba(255,196,110,0)');
-        ctx.fillStyle = glow;
-        ctx.fillRect(x - u * 9, y - hh * 0.5 - u * 9, u * 18, u * 18);
+    // Rauch aus den Kaminen, wenn geheizt wird; der Wind biegt ihn um
+    if (s.temp < 12) {
+      const smoke = mix([120, 126, 140], [226, 228, 232], day);
+      for (const [cx, cy] of this.village.chimneys) {
+        for (let j = 0; j < 6; j++) {
+          const phase = (clock / 3200 + j / 6 + cx * 0.37) % 1;
+          ctx.fillStyle = rgb(smoke, (1 - phase) * 0.34);
+          ctx.beginPath();
+          ctx.arc(
+            cx - phase * u * (1 + blow * 12) + Math.sin(clock / 900 + j) * u * 0.25,
+            cy - phase * u * (6 - blow * 3.5),
+            u * (0.35 + phase * 1.2), 0, Math.PI * 2,
+          );
+          ctx.fill();
+        }
       }
-      ctx.fillStyle = lit > 0 ? `rgba(255,214,130,${0.5 + lit * 0.5})` : rgb(mix([60, 80, 110], [96, 124, 150], day));
-      ctx.fillRect(x - hw * 0.62, y - hh * 0.72, u * 1.2, u * 1.2);
-      ctx.fillRect(x + hw * 0.62 - u * 1.2, y - hh * 0.72, u * 1.2, u * 1.2);
     }
 
     // ---------- Niederschlag in drei Tiefenebenen ----------
@@ -550,7 +808,7 @@ export class Scene {
 
     // ---------- Nebel: verschluckt Berge und Wald, zieht in Schwaden über die Wiese ----------
     if (s.fog > 0.02) {
-      const fogColor = mix([46, 50, 60], [208, 212, 218], day);
+      const fogColor = mix([78, 84, 100], [208, 212, 218], day);
       const veil = ctx.createLinearGradient(0, 0, 0, h);
       veil.addColorStop(0, rgb(fogColor, 0.45 * s.fog));
       veil.addColorStop(horizon / h, rgb(fogColor, 0.9 * s.fog));
@@ -576,7 +834,7 @@ export class Scene {
     // ---------- Bildwirkung: Randabdunklung und Lesehilfe für den Text ----------
     const vignette = ctx.createRadialGradient(w / 2, h * 0.45, Math.min(w, h) * 0.35, w / 2, h * 0.45, Math.max(w, h) * 0.8);
     vignette.addColorStop(0, 'rgba(0,0,0,0)');
-    vignette.addColorStop(1, 'rgba(0,0,0,0.38)');
+    vignette.addColorStop(1, 'rgba(0,0,0,0.28)');
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, w, h);
     // Abdunklung hinter dem Text: läuft nach allen Seiten weich aus, ohne Kante
@@ -603,17 +861,17 @@ export class Scene {
     ctx.fillText(hhmm, w - pad, pad + u * 5);
 
     ctx.textAlign = 'left';
-    ctx.font = `800 ${u * 25}px system-ui, sans-serif`;
-    ctx.fillText(`${Math.round(s.temp)}°`, pad, pad + u * 33);
+    ctx.font = `800 ${u * 22}px system-ui, sans-serif`;
+    ctx.fillText(`${Math.round(s.temp)}°`, pad, pad + u * 29);
     ctx.font = `600 ${u * 6}px system-ui, sans-serif`;
-    ctx.fillText(KIND_TEXT[s.kind], pad, pad + u * 42);
+    ctx.fillText(KIND_TEXT[s.kind], pad, pad + u * 37.5);
     ctx.font = `500 ${u * 4.2}px system-ui, sans-serif`;
-    ctx.fillText(`Niederschlag ${s.precip.toFixed(1)} mm · Risiko ${Math.round(s.prob * 100)} %`, pad, pad + u * 49, w - pad * 2);
+    ctx.fillText(`Niederschlag ${s.precip.toFixed(1)} mm · Risiko ${Math.round(s.prob * 100)} %`, pad, pad + u * 44, w - pad * 2);
     const windText = !s.hasWind
       ? 'Wind: keine Angabe'
       : `Wind ${Math.round(s.wind)} km/h` + (s.hasGust ? ` · Böen ${Math.round(s.gust)} km/h` : '');
-    ctx.fillText(windText, pad, pad + u * 55, w - pad * 2);
-    ctx.fillText(`Konfidenz ${s.confLabel} · ${s.n} Quellen`, pad, pad + u * 61, w - pad * 2);
+    ctx.fillText(windText, pad, pad + u * 49.5, w - pad * 2);
+    ctx.fillText(`Konfidenz ${s.confLabel} · ${s.n} Quellen`, pad, pad + u * 55, w - pad * 2);
     ctx.shadowBlur = 0;
 
     this.drawTimeline(w, h, u, pad, main);

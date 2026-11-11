@@ -145,3 +145,85 @@ export function sunElevation(ms, lat, lon) {
   const la = lat * rad;
   return Math.asin(Math.sin(la) * Math.sin(dec) + Math.cos(la) * Math.cos(dec) * Math.cos(ha)) / rad;
 }
+
+// ---------------------------------------------------------------------------------
+// Tagesübersicht: eine Zusammenfassung pro Kalendertag am Ort (utcOffset in Sekunden)
+// ---------------------------------------------------------------------------------
+export function dailySummary(hours, utcOffset = 0) {
+  const days = new Map();
+  for (const h of hours) {
+    const day = Math.floor((h.ms + utcOffset * 1000) / 86400e3);
+    if (!days.has(day)) days.set(day, []);
+    days.get(day).push(h);
+  }
+  return [...days.values()].map((list) => {
+    const count = (kind) => list.filter((h) => h.kind === kind).length;
+    const wet = list.filter((h) => isWet(h.kind));
+    const gusts = list.map((h) => h.gust ?? h.wind).filter((v) => v !== null && v !== undefined);
+    // Prägende Wetterlage: Gewitter zählt immer, Niederschlag ab zwei Stunden,
+    // Nebel ab drei Stunden, sonst die häufigste Bewölkung.
+    let kind;
+    if (count('thunder')) kind = 'thunder';
+    else if (wet.length >= 2) kind = count('snow') > count('rain') ? 'snow' : 'rain';
+    else if (count('fog') >= 3) kind = 'fog';
+    else kind = ['cloudy', 'partly', 'clear'].reduce((best, k) => (count(k) > count(best) ? k : best), 'cloudy');
+    return {
+      from: list[0].ms,
+      to: list[list.length - 1].ms,
+      hours: list.length,
+      kind,
+      lo: Math.min(...list.map((h) => h.temp)),
+      hi: Math.max(...list.map((h) => h.temp)),
+      precip: wet.reduce((sum, h) => sum + h.precip, 0),
+      wetHours: wet.length,
+      maxGust: gusts.length ? Math.max(...gusts) : null,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------------
+// Hinweise auf markantes Wetter. Das sind Hinweise der App aus den Vorhersagedaten,
+// KEINE amtlichen Warnungen. Schwellen: Böen nach Beaufort (50 = Stärke 7, 62 = 8,
+// 75 = 9, 89 = 10), Starkregen ab 15 mm pro Stunde, Hitze ab 30 Grad.
+// ---------------------------------------------------------------------------------
+export function warnings(hours) {
+  const out = [];
+  const add = (level, icon, title, list) =>
+    out.push({ level, icon, title, from: list[0].ms, to: list[list.length - 1].ms, hours: list.length });
+  const pick = (test) => hours.filter(test);
+  const gustOf = (h) => h.gust ?? h.wind ?? 0;
+
+  const thunder = pick((h) => h.kind === 'thunder');
+  if (thunder.length) add('warn', '⛈️', 'Gewitter möglich', thunder);
+
+  const windy = pick((h) => gustOf(h) >= 50);
+  if (windy.length) {
+    const max = Math.max(...windy.map(gustOf));
+    const name = max >= 89 ? 'Schwere Sturmböen' : max >= 75 ? 'Sturmböen' : max >= 62 ? 'Stürmische Böen' : 'Starke Böen';
+    add(max >= 62 ? 'warn' : 'info', '💨', `${name} bis ${Math.round(max)} km/h`, windy);
+  }
+
+  const heavy = pick((h) => h.kind !== 'snow' && h.precip >= 5);
+  if (heavy.length) {
+    const max = Math.max(...heavy.map((h) => h.precip));
+    add(max >= 15 ? 'warn' : 'info', '🌧️', `${max >= 15 ? 'Starkregen' : 'Kräftiger Regen'} bis ${max.toFixed(1)} mm pro Stunde`, heavy);
+  }
+
+  const snow = pick((h) => h.kind === 'snow');
+  if (snow.length) add('info', '🌨️', `Schneefall, ${snow.reduce((s, h) => s + h.precip, 0).toFixed(1)} mm Niederschlag`, snow);
+
+  const frost = pick((h) => h.temp <= 0);
+  const maybeFrost = pick((h) => (h.tMin ?? h.temp) <= 0);
+  if (frost.length) add('info', '❄️', `Frost bis ${Math.round(Math.min(...frost.map((h) => h.temp)))}°`, frost);
+  else if (maybeFrost.length) {
+    add('info', '❄️', `Frost nicht ausgeschlossen (kälteste Quelle ${Math.round(Math.min(...maybeFrost.map((h) => h.tMin)))}°)`, maybeFrost);
+  }
+
+  const heat = pick((h) => h.temp >= 30);
+  if (heat.length) add('warn', '🌡️', `Hitze bis ${Math.round(Math.max(...heat.map((h) => h.temp)))}°`, heat);
+
+  const fog = pick((h) => h.kind === 'fog');
+  if (fog.length) add('info', '🌫️', 'Nebel', fog);
+
+  return out.sort((a, b) => (a.level === b.level ? a.from - b.from : a.level === 'warn' ? -1 : 1));
+}
