@@ -22,11 +22,12 @@ Die öffentlichen Quellcode- und Dokumentations-Repos der Dienste wurden gelesen
 
 Nicht geprüft, weil die Dienste selbst aus der Entwicklungsumgebung nicht erreichbar sind:
 - ob data.geo.admin.ch den Abruf aus dem Browser zulässt (CORS). Falls nicht, zeigt die Statuszeile der Auswertung «MeteoSchweiz: nicht erreichbar» und es gilt die Modellanalyse.
-- welche Regionalmodelle für einen Ort tatsächlich Werte liefern und ob sie alle abgefragten Grössen haben.
+- welche Regionalmodelle für einen Ort tatsächlich Werte liefern und ob sie alle abgefragten Grössen haben. Rückmeldung vom Gerät (Raum Basel, 12.11.2026): alle liefern ausser GeoSphere; dort war das eingestellte Modell AROME eingetragen, jetzt C-LAEF.
+- Rückmeldung vom Gerät: Der Abruf der Messwerte von MeteoSchweiz aus dem Browser funktioniert (Station Basel / Binningen).
 - ob MET Norway ausserhalb Nordeuropas Böen liefert.
 
 ## Zusätzliche Quellen (11.11.2026)
-Sechs Regionalmodelle über Open-Meteo, je nur für einen Teil Europas: MeteoSchweiz ICON-CH, GeoSphere Austria AROME, ItaliaMeteo ICON-2I, CHMI ALADIN, KNMI HARMONIE, DMI HARMONIE. Abgefragt wird jeweils das Einzelmodell, nicht die «seamless»-Variante: Diese fällt ausserhalb des Gebiets auf ECMWF zurück und würde ECMWF mehrfach zählen.
+Sechs Regionalmodelle über Open-Meteo, je nur für einen Teil Europas: MeteoSchweiz ICON-CH, GeoSphere Austria C-LAEF (Nachfolger des am 4.11.2026 eingestellten AROME Austria), ItaliaMeteo ICON-2I, CHMI ALADIN, KNMI HARMONIE, DMI HARMONIE. Abgefragt wird jeweils das Einzelmodell, nicht die «seamless»-Variante: Diese fällt ausserhalb des Gebiets auf ECMWF zurück und würde ECMWF mehrfach zählen.
 
 Ausgangsgewicht je 0.8 statt 1.0, weil sie zu Modellfamilien gehören, die schon vertreten sind. Das ist eine Setzung.
 

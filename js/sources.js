@@ -145,7 +145,8 @@ export const SOURCES = [
   { id: 'brightsky', label: 'DWD MOSMIX (via Bright Sky)', weight: 1.5, load: brightSky },
   // Hochaufgelöste Regionalmodelle, je nur für einen Teil Europas
   { id: 'meteoswiss', label: 'MeteoSchweiz ICON-CH (via Open-Meteo)', weight: 0.8, regional: true, load: openMeteo('meteoswiss_icon_seamless', true) },
-  { id: 'geosphere', label: 'GeoSphere Austria AROME (via Open-Meteo)', weight: 0.8, regional: true, load: openMeteo('geosphere_arome_austria', true) },
+  // C-LAEF (1 km) ist der Nachfolger von AROME Austria, das am 4.11.2026 eingestellt wurde
+  { id: 'geosphere', label: 'GeoSphere Austria C-LAEF (via Open-Meteo)', weight: 0.8, regional: true, load: openMeteo('geosphere_claef_austria', true) },
   { id: 'italiameteo', label: 'ItaliaMeteo ICON-2I (via Open-Meteo)', weight: 0.8, regional: true, load: openMeteo('italia_meteo_arpae_icon_2i', true) },
   { id: 'chmi', label: 'CHMI ALADIN Mitteleuropa (via Open-Meteo)', weight: 0.8, regional: true, load: openMeteo('chmi_aladin_central_europe_2km', true) },
   { id: 'knmi', label: 'KNMI HARMONIE (via Open-Meteo)', weight: 0.8, regional: true, load: openMeteo('knmi_harmonie_arome_europe', true) },
