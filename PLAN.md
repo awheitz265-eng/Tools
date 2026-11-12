@@ -40,6 +40,12 @@ Bewusst nicht eingebaut:
 ## Hinweise auf markantes Wetter (11.11.2026)
 Hinweise der App, keine amtlichen Warnungen. Schwellen: Böen ab 50 km/h (Beaufort 7) als Hinweis, ab 62 (Beaufort 8) hervorgehoben, ab 75 «Sturmböen», ab 89 «Schwere Sturmböen»; Regen ab 5 mm pro Stunde, «Starkregen» ab 15; Frost ab 0 Grad; Hitze ab 30 Grad; dazu Gewitter, Schneefall, Nebel. Die Schwellen sind Setzungen.
 
+## Animation: Flimmern behoben, Darstellung überarbeitet (12.11.2026)
+- Ursache des Flimmerns (gemessen): Die Zahlen im Bild wurden zwischen den Stunden laufend mitgerechnet und änderten sich bis zu 30-mal pro Sekunde; weil Ziffern verschieden breit sind, rückte der Text daneben hin und her. Jetzt zeigt der Text die Werte der aktuellen Stunde, wechselt nur beim Stundenwechsel (rund einmal pro Sekunde bei Tempo 1×) und setzt Ziffern mit fester Breite.
+- Die Bildgrösse hängt nicht mehr von der ein- und ausfahrenden Adressleiste ab.
+- Wolken aus einem Rauschfeld statt aus einzelnen Ballen, Gebirge in zwei Ketten mit Schattenflanken und Schneegrenze, Grasstruktur, feines Korn.
+- Gebirge, Landschaft, Text, Zeitleiste und Bildabschluss werden zwischengespeichert und nur bei Änderungen neu gezeichnet. Zeichenzeit pro Bild im Testbrowser (ohne Grafikbeschleunigung, 1336×1195 Punkte): im Mittel 17.9 ms statt 21.0 ms.
+
 ## Wind, Gewitter, Nebel (Stand 10.11.2026)
 - Wind und Böen: gewichteter Median der Quellen mit Angabe, in km/h. MET Norway liefert keine Böen.
 - Gewitter: wird angezeigt, sobald Quellen mit zusammen mindestens 30 % des Gewichts eines melden. Die Schwelle ist bewusst tief, weil Gewitter örtlich und schwer vorherzusagen sind; sie ist eine Setzung, nicht gemessen.

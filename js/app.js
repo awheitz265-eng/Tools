@@ -8,7 +8,7 @@ const H = 3600e3;
 const STORE_KEY = 'wetter.letzterStand';
 const VERIFY_KEY = 'wetter.auswertung';
 const SPEED_KEY = 'wetter.tempo';
-const VERSION = '12.11.2026-1'; // steht unten auf der Seite, um den geladenen Stand zu erkennen
+const VERSION = '12.11.2026-2'; // steht unten auf der Seite, um den geladenen Stand zu erkennen
 const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const KIND = {
   clear: ['☀️', 'Klar'],

@@ -71,7 +71,7 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px 
 .day-line { color: var(--dim); font-size: 0.8rem; }
 
 .stage { border-radius: 18px; overflow: hidden; background: #16233b; }
-canvas { display: block; width: 100%; height: min(72vh, 125vw); max-height: 640px; cursor: pointer; }
+canvas { display: block; width: 100%; height: min(72vh, 125vw); height: min(72svh, 125vw); max-height: 640px; cursor: pointer; }
 .controls { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
 .controls button { min-width: 7.5em; }
 .controls input { flex: 1; min-width: 0; accent-color: var(--accent); }
