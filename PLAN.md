@@ -46,6 +46,12 @@ Hinweise der App, keine amtlichen Warnungen. Schwellen: Böen ab 50 km/h (Beaufo
 - Wolken aus einem Rauschfeld statt aus einzelnen Ballen, Gebirge in zwei Ketten mit Schattenflanken und Schneegrenze, Grasstruktur, feines Korn.
 - Gebirge, Landschaft, Text, Zeitleiste und Bildabschluss werden zwischengespeichert und nur bei Änderungen neu gezeichnet. Zeichenzeit pro Bild im Testbrowser (ohne Grafikbeschleunigung, 1336×1195 Punkte): im Mittel 17.9 ms statt 21.0 ms.
 
+## Animation: weichere Übergänge, Nebel überarbeitet (12.11.2026)
+- Licht und Wetter im Bild folgen den Zielwerten mit Trägheit (Zeitkonstante 0.65 s bei Tempo 1×) und zielen eine knappe halbe Stunde voraus. Der Wechsel zwischen zwei Wetterlagen läuft über fast die ganze Stunde statt nur um die Stundenmitte. Die Dämmerung reicht von -9 bis +9 Grad Sonnenhöhe statt von -6 bis +6.
+- Gemessen im Testbrowser: Die Bewölkung ändert sich pro Bild höchstens um 1.3 % (vorher rund 5 %).
+- Folge: Eine Wetterlage, die nur eine Stunde dauert, erreicht im Bild nicht mehr die volle Stärke (Regen rund 60 %). Die Beschriftung zeigt sie weiterhin an.
+- Nebel: oben dünner, damit die Wolkendecke erkennbar bleibt; ziehende Nebelschichten, durchscheinende Sonne, Schwaden ohne Kanten.
+
 ## Wind, Gewitter, Nebel (Stand 10.11.2026)
 - Wind und Böen: gewichteter Median der Quellen mit Angabe, in km/h. MET Norway liefert keine Böen.
 - Gewitter: wird angezeigt, sobald Quellen mit zusammen mindestens 30 % des Gewichts eines melden. Die Schwelle ist bewusst tief, weil Gewitter örtlich und schwer vorherzusagen sind; sie ist eine Setzung, nicht gemessen.

@@ -537,6 +537,8 @@ export class Scene {
     grain.getContext('2d').putImageData(gi, 0, 0);
     this.grain = this.ctx.createPattern(grain, 'repeat');
     this.dataVersion = 0;
+    this.vis = null; // geglättete Licht- und Wetterwerte des Bildes
+    this.frameDt = null;
     new ResizeObserver(() => this.resize()).observe(canvas);
     this.resize();
   }
@@ -590,6 +592,7 @@ export class Scene {
   tick(now) {
     if (!this.playing) return;
     const dt = Math.max(0, Math.min(now - this.last, 100)); // rAF-Zeit kann vor dem Startzeitpunkt liegen
+    this.frameDt = dt; // sagt draw(), dass dies ein fortlaufendes Bild ist (für die Trägheit)
     this.last = now;
     this.clock += dt;
     // Wolken und Nebel ziehen mit dem Wind: eigener Zähler, damit nichts springt
@@ -614,8 +617,9 @@ export class Scene {
     const b = hrs[Math.min(i + 1, hrs.length - 1)];
     const k = pos - i;
     const near = k < 0.5 ? a : b;
-    // Das Bild wechselt zügig um die Stundenmitte, gleichzeitig mit der Beschriftung
-    const e = clamp01((k - 0.3) / 0.4);
+    // Das Bild geht über fast die ganze Stunde weich von einer Wetterlage in die nächste
+    // über; die Beschriftung wechselt in der Mitte dieses Übergangs
+    const e = clamp01((k - 0.08) / 0.84);
     const ease = e * e * (3 - 2 * e);
     const va = visualState(a);
     const vb = visualState(b);
@@ -658,13 +662,33 @@ export class Scene {
     const s = this.stateAt(main);
     const { place } = this.data;
     const elev = sunElevation(s.ms, place.lat, place.lon);
-    const day = clamp01((elev + 6) / 12); // 0 = Nacht, 1 = Tag, dazwischen Dämmerung
+
+    // Licht und Wetter im Bild folgen den Zielwerten mit etwas Trägheit. So wirken
+    // Wechsel (hell/dunkel, heiter/bedeckt, Regen an/aus) nicht abrupt, auch wenn eine
+    // Vorhersagestunde im Film nur einen Augenblick dauert.
+    const target = {
+      day: clamp01((elev + 9) / 18), // 0 = Nacht, 1 = Tag; Dämmerung von -9 bis +9 Grad Sonnenhöhe
+      dusk: clamp01(1 - Math.abs(elev) / 10), // Sonne nahe am Horizont
+      // Die Trägheit hinkt nach; darum zielt das Bild auf das Wetter eine knappe halbe
+      // Stunde voraus. So liegt die Mitte des Übergangs wieder beim Wechsel der Beschriftung.
+      ...(({ cover, rain, snow, fog, thunder }) => ({ cover, rain, snow, fog, thunder }))(
+        this.stateAt(clamp01(main + 0.45 / Math.max(1, this.data.hours.length - 1))),
+      ),
+    };
+    if (!this.vis || this.frameDt === null) this.vis = target; // Sprung (Regler, Start): sofort übernehmen
+    else {
+      const follow = 1 - Math.exp(-this.frameDt / (650 / Math.sqrt(this.speed)));
+      for (const key of Object.keys(target)) this.vis[key] += (target[key] - this.vis[key]) * follow;
+    }
+    this.frameDt = null;
+    Object.assign(s, { cover: this.vis.cover, rain: this.vis.rain, snow: this.vis.snow, fog: this.vis.fog, thunder: this.vis.thunder });
+    const day = this.vis.day;
     const cover = s.cover;
     // Horizont so, dass zwischen ihm und der Zeitleiste Platz für Wald und Dorf bleibt
     const horizon = Math.max(h * 0.45, h - u * 62);
 
     // ---------- Licht und Stimmung ----------
-    const dusk = clamp01(1 - Math.abs(elev) / 10); // Sonne nahe am Horizont
+    const dusk = this.vis.dusk;
     const wetAmt = clamp01((s.rain + s.snow) / 2);
     const falling = clamp01((s.rain + s.snow) / 0.3); // 1 = es regnet oder schneit
     const gloom = clamp01(cover ** 1.5 * 1.2 + falling * 0.2 + s.thunder * 0.3); // wie trüb der Himmel ist
@@ -731,10 +755,12 @@ export class Scene {
     }
 
     // Sonne: weicher Lichthof, nahe am Horizont rötlich
+    const solarTime = ((s.ms / 3600e3 + place.lon / 15) % 24 + 24) % 24; // wahre Ortszeit
+    const sunX = w * (0.08 + 0.84 * clamp01((solarTime - 5) / 14));
+    const sunY = horizon - Math.min(elev / 60, 1) * horizon * 0.75;
     if (elev > -8) {
-      const local = ((s.ms / 3600e3 + place.lon / 15) % 24 + 24) % 24; // wahre Ortszeit
-      const x = w * (0.08 + 0.84 * clamp01((local - 5) / 14));
-      const y = horizon - Math.min(elev / 60, 1) * horizon * 0.75;
+      const x = sunX;
+      const y = sunY;
       const power = clearSky * (1 - cover * 0.35);
       const tint = mix([255, 150, 70], [255, 244, 214], clamp01(elev / 14));
       const halo = ctx.createRadialGradient(x, y, 0, x, y, u * 46);
@@ -760,7 +786,7 @@ export class Scene {
 
     // ---------- Wolken ----------
     // Eingefärbte Wolkenbilder nur neu berechnen, wenn sich das Licht merklich ändert
-    const tintKey = `${Math.round(day * 12)}|${Math.round(gloom * 8)}|${Math.round(dusk * 4)}`;
+    const tintKey = `${Math.round(day * 24)}|${Math.round(gloom * 12)}|${Math.round(dusk * 6)}`;
     if (this.cloudTint.key !== tintKey) this.cloudTint = { key: tintKey, map: new Map() };
     const tinted = (level) => {
       let tex = this.cloudTint.map.get(level);
@@ -820,7 +846,7 @@ export class Scene {
 
     // Gewitter: Blitz im Himmel (die Berge verdecken sein unteres Ende)
     let flash = 0;
-    if (s.thunder > 0.5) {
+    if (s.thunder > 0.3) {
       const period = 2400;
       const idx = Math.floor(clock / period);
       const since = clock - idx * period - R[(idx * 13) % 600] * 1300;
@@ -869,7 +895,7 @@ export class Scene {
     const sunLocal = ((s.ms / 3600e3 + place.lon / 15) % 24 + 24) % 24;
     const sunLeft = elev > -4 && sunLocal < 12; // nachts kommt das Licht vom Mond rechts
     const snowColor = mix(mix([156, 168, 202], [250, 252, 255], day), [255, 214, 190], dusk * 0.5);
-    const peakKey = `${w}x${h}|${Math.round(day * 20)}|${Math.round(gloom * 6)}|${Math.round(dusk * 5)}|${sunLeft}`;
+    const peakKey = `${w}x${h}|${Math.round(day * 28)}|${Math.round(gloom * 8)}|${Math.round(dusk * 5)}|${sunLeft}`;
     if (this.peakKey !== peakKey) {
       this.peakKey = peakKey;
       this.peaks ??= newCanvas(1, 1);
@@ -892,8 +918,8 @@ export class Scene {
     const month = new Date(s.ms).getUTCMonth();
     const season = month <= 1 || month === 11 ? 'winter' : month <= 4 ? 'spring' : month <= 7 ? 'summer' : 'autumn';
     const light = {
-      day: Math.round(day * 20) / 20,
-      gloom: Math.round(gloom * 6) / 6,
+      day: Math.round(day * 28) / 28,
+      gloom: Math.round(gloom * 8) / 8,
       dusk: Math.round(dusk * 5) / 5,
       snow: Math.round(snowGround * 5) / 5,
       wet: Math.round(wetAmt * 3) / 3,
@@ -983,20 +1009,47 @@ export class Scene {
     // ---------- Nebel: verschluckt Berge und Wald, zieht in Schwaden über die Wiese ----------
     if (s.fog > 0.02) {
       const fogColor = mix([78, 84, 100], [208, 212, 218], day);
+      // am Boden dicht, nach oben dünner: die Wolkendecke darüber bleibt erkennbar
       const veil = ctx.createLinearGradient(0, 0, 0, h);
-      veil.addColorStop(0, rgb(fogColor, 0.45 * s.fog));
-      veil.addColorStop(horizon / h, rgb(fogColor, 0.9 * s.fog));
-      veil.addColorStop(1, rgb(fogColor, 0.55 * s.fog));
+      veil.addColorStop(0, rgb(fogColor, 0.22 * s.fog));
+      veil.addColorStop((horizon * 0.55) / h, rgb(fogColor, 0.5 * s.fog));
+      veil.addColorStop(horizon / h, rgb(fogColor, 0.88 * s.fog));
+      veil.addColorStop(1, rgb(fogColor, 0.5 * s.fog));
       ctx.fillStyle = veil;
       ctx.fillRect(0, 0, w, h);
-      ctx.globalAlpha = 0.5 * s.fog;
-      for (let i = 0; i < 6; i++) {
-        const bw = u * (120 + R[i + 560] * 80);
-        const span = w + bw;
-        const x = ((R[i + 570] * span + this.drift * 0.004 * u * (0.6 + R[i + 580])) % span) - bw;
-        ctx.drawImage(tinted(2), (i * 83) % 256, 0, 256, CH, x, horizon + u * (-12 + i * 5.5), bw, bw * 0.2);
+      // ungleichmässige, langsam ziehende Nebelschichten über dem ganzen Bild
+      ctx.globalAlpha = 0.3 * s.fog;
+      const tile = Math.max(w, u * 100) * 1.7;
+      for (let x = -((this.drift * 0.0012 * u) % tile); x < w; x += tile) {
+        ctx.drawImage(tinted(3), x, horizon * 0.25, tile + 1, h - horizon * 0.1);
       }
       ctx.globalAlpha = 1;
+      // die Sonne scheint als heller Fleck durch
+      if (elev > 0) {
+        const glow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, u * 30);
+        glow.addColorStop(0, `rgba(255,250,236,${0.5 * s.fog * day})`);
+        glow.addColorStop(0.15, `rgba(255,250,236,${0.28 * s.fog * day})`);
+        glow.addColorStop(1, 'rgba(255,250,236,0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(sunX - u * 30, sunY - u * 30, u * 60, u * 60);
+      }
+      // Schwaden am Boden: weiche, flache Flecken ohne Kanten
+      for (let i = 0; i < 7; i++) {
+        const bw = u * (90 + R[i + 560] * 80);
+        const span = w + bw;
+        const cx = ((R[i + 570] * span + this.drift * 0.004 * u * (0.6 + R[i + 580])) % span) - bw / 2;
+        ctx.save();
+        ctx.translate(cx, horizon + u * (-6 + i * 4.5));
+        ctx.scale(1, 0.14);
+        const bank = ctx.createRadialGradient(0, 0, 0, 0, 0, bw / 2);
+        bank.addColorStop(0, rgb(fogColor, 0.6 * s.fog));
+        bank.addColorStop(1, rgb(fogColor, 0));
+        ctx.fillStyle = bank;
+        ctx.beginPath();
+        ctx.arc(0, 0, bw / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     }
 
     // Wetterleuchten: der Blitz erhellt kurz die ganze Szene
